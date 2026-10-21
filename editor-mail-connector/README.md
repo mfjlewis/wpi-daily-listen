@@ -42,7 +42,7 @@ Cloud project billed to it. Cloud Run's free tier will cover this usage.
 In Cloud Shell (the `>_` button in the console), run:
 
 ```bash
-git clone https://github.com/mfjlewis/wpi-daily-listen.git
+git clone -b ccr-3e511309-luryjm https://github.com/mfjlewis/wpi-daily-listen.git
 cd wpi-daily-listen/editor-mail-connector
 
 PROJECT=$(gcloud config get-value project)
@@ -54,7 +54,7 @@ gcloud storage buckets create gs://$PROJECT-editor-mail-state --location=$REGION
 
 # First deploy with placeholder secrets, just to learn the service URL
 gcloud run deploy editor-mail --source . --region $REGION --allow-unauthenticated \
-  --max-instances 1 \
+  --max-instances 1 --execution-environment gen2 \
   --add-volume name=state,type=cloud-storage,bucket=$PROJECT-editor-mail-state \
   --add-volume-mount volume=state,mount-path=/data \
   --set-env-vars GOOGLE_CLIENT_ID=placeholder,GOOGLE_CLIENT_SECRET=placeholder,BASE_URL=https://placeholder,ALLOWED_EMAIL=editor@wherepeteris.com,JWT_SIGNING_KEY=$(python3 -c "import secrets;print(secrets.token_urlsafe(48))")
