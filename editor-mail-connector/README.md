@@ -4,9 +4,15 @@ A small hosted connector that lets Claude (claude.ai and the desktop and mobile
 apps) read the **editor@wherepeteris.com** mailbox. It runs next to the built-in
 Gmail connector, which stays on mfjlewis@gmail.com, so Claude can see both inboxes.
 
-Tools: `search_threads`, `get_thread`, `get_message`, `list_labels`,
-`create_draft`, `create_reply_draft`. It **only creates drafts and never sends
-mail**: you review and send drafts yourself in Gmail.
+Tools:
+- Read: `search_threads`, `get_thread`, `get_message`, `list_labels`
+- Draft: `create_draft`, `create_reply_draft`
+- Send: `send_message`, `send_reply`, `send_draft`
+
+Sending is immediate and can't be undone. Each send tool tells Claude to show
+you the exact recipients, subject and body and wait for your go-ahead. In
+Claude's connector settings you can also set the three send tools to
+**Needs approval**, so every send asks you first.
 
 Security:
 - You sign in with Google. The Google app is set to **Internal**, so only

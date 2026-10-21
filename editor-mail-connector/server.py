@@ -2,7 +2,7 @@
 
 Claude (claude.ai, the desktop and mobile apps) connects to this server as a
 custom connector. Users sign in with Google; only ALLOWED_EMAIL is accepted.
-Tools can read mail and create drafts. Nothing here sends mail.
+Tools can read mail, create drafts and send mail.
 """
 
 import base64
@@ -52,7 +52,8 @@ mcp = FastMCP(
     instructions=(
         f"Gmail tools for the {ALLOWED_EMAIL} mailbox (Where Peter Is). "
         "This is separate from the user's personal Gmail. Use Gmail search "
-        "syntax for queries. Drafts are created, never sent."
+        "syntax for queries. Prefer drafts; send only when the user "
+        "explicitly confirms the final message."
     ),
     auth=auth,
 )
@@ -182,20 +183,26 @@ def list_labels() -> list[dict]:
     return [{"id": l["id"], "name": l["name"], "type": l.get("type")} for l in resp.get("labels", [])]
 
 
-def _save_draft(gmail, mime, thread_id=None):
-    raw = base64.urlsafe_b64encode(mime.as_bytes()).decode()
-    message = {"raw": raw}
+def _encode(mime, thread_id=None):
+    message = {"raw": base64.urlsafe_b64encode(mime.as_bytes()).decode()}
     if thread_id:
         message["threadId"] = thread_id
-    draft = gmail.users().drafts().create(userId="me", body={"message": message}).execute()
+    return message
+
+
+def _save_draft(gmail, mime, thread_id=None):
+    draft = gmail.users().drafts().create(userId="me", body={"message": _encode(mime, thread_id)}).execute()
     return {"draft_id": draft["id"], "message_id": draft["message"]["id"],
             "note": "Saved to Drafts in editor@wherepeteris.com. Not sent."}
 
 
-@mcp.tool
-def create_draft(to: str, subject: str, body: str, cc: str = "", bcc: str = "") -> dict:
-    """Create a new draft (not sent) from editor@wherepeteris.com.
-    'to', 'cc' and 'bcc' are comma-separated addresses."""
+def _send(gmail, mime, thread_id=None):
+    sent = gmail.users().messages().send(userId="me", body=_encode(mime, thread_id)).execute()
+    return {"message_id": sent["id"], "thread_id": sent["threadId"],
+            "note": "Sent from editor@wherepeteris.com."}
+
+
+def _new_message(to, subject, body, cc="", bcc=""):
     mime = EmailMessage()
     mime["From"] = ALLOWED_EMAIL
     mime["To"] = to
@@ -205,13 +212,11 @@ def create_draft(to: str, subject: str, body: str, cc: str = "", bcc: str = "") 
         mime["Bcc"] = bcc
     mime["Subject"] = subject
     mime.set_content(body)
-    return _save_draft(_gmail(), mime)
+    return mime
 
 
-@mcp.tool
-def create_reply_draft(message_id: str, body: str, reply_all: bool = False) -> dict:
-    """Draft a reply (not sent) to a message, threaded under the original."""
-    gmail = _gmail()
+def _reply_message(gmail, message_id, body, reply_all):
+    """Build a reply to message_id; returns (mime, thread_id)."""
     orig = gmail.users().messages().get(
         userId="me", id=message_id, format="metadata",
         metadataHeaders=["From", "Reply-To", "To", "Cc", "Subject", "Message-ID", "References"],
@@ -234,8 +239,44 @@ def create_reply_draft(message_id: str, body: str, reply_all: bool = False) -> d
         mime["In-Reply-To"] = h["Message-ID"]
         mime["References"] = f"{h.get('References', '')} {h['Message-ID']}".strip()
     mime.set_content(body)
-    return _save_draft(gmail, mime, thread_id=orig["threadId"])
+    return mime, orig["threadId"]
 
+
+SEND_WARNING = ("This sends real email immediately and cannot be undone. Only call it after "
+                "the user has seen the exact recipients, subject and body and told you to send.")
+
+
+@mcp.tool
+def create_draft(to: str, subject: str, body: str, cc: str = "", bcc: str = "") -> dict:
+    """Create a new draft (not sent) from editor@wherepeteris.com.
+    'to', 'cc' and 'bcc' are comma-separated addresses."""
+    return _save_draft(_gmail(), _new_message(to, subject, body, cc, bcc))
+
+
+@mcp.tool
+def create_reply_draft(message_id: str, body: str, reply_all: bool = False) -> dict:
+    """Draft a reply (not sent) to a message, threaded under the original."""
+    gmail = _gmail()
+    return _save_draft(gmail, *_reply_message(gmail, message_id, body, reply_all))
+
+
+@mcp.tool(description="Send a new email from editor@wherepeteris.com. 'to', 'cc' and 'bcc' "
+                      "are comma-separated addresses. " + SEND_WARNING)
+def send_message(to: str, subject: str, body: str, cc: str = "", bcc: str = "") -> dict:
+    return _send(_gmail(), _new_message(to, subject, body, cc, bcc))
+
+
+@mcp.tool(description="Send a reply to a message, threaded under the original. " + SEND_WARNING)
+def send_reply(message_id: str, body: str, reply_all: bool = False) -> dict:
+    gmail = _gmail()
+    return _send(gmail, *_reply_message(gmail, message_id, body, reply_all))
+
+
+@mcp.tool(description="Send an existing draft from the editor@wherepeteris.com Drafts folder. " + SEND_WARNING)
+def send_draft(draft_id: str) -> dict:
+    sent = _gmail().users().drafts().send(userId="me", body={"id": draft_id}).execute()
+    return {"message_id": sent["id"], "thread_id": sent["threadId"],
+            "note": "Sent from editor@wherepeteris.com."}
 
 if __name__ == "__main__":
     mcp.run(transport="http", host="0.0.0.0", port=int(os.environ.get("PORT", "8080")), path="/mcp")
