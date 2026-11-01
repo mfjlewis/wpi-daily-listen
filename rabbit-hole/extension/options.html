@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Rabbit Hole settings</title><link rel="stylesheet" href="ext.css"></head>
+<body class="options">
+  <h1><img src="icons/48.png" width="32" height="32" alt=""> Rabbit Hole</h1>
+  <p>Connect the extension to your Rabbit Hole app.</p>
+  <form id="form">
+    <label>App address <input type="url" id="server" placeholder="https://your-rabbit-hole.example.com" required></label>
+    <label>Passphrase <input type="password" id="token" placeholder="the APP_TOKEN you set"></label>
+    <button class="primary">Save and test</button>
+  </form>
+  <p id="result" class="detail"></p>
+  <h2>How to use it</h2>
+  <ul>
+    <li><b>Toolbar button</b> or <b>Alt+Shift+S</b>: save the page you're reading. If you've selected text, it's saved as a highlight too.</li>
+    <li><b>Right-click selected text</b> → "Save selection to Rabbit Hole as a highlight".</li>
+    <li><b>Right-click a link</b> → "Save link to Rabbit Hole", without opening it.</li>
+    <li>In the popup, <b>Screenshot visible part</b> adds what's on screen as a highlight.</li>
+  </ul>
+  <p class="detail">The extension sends the page as you see it, so articles you're logged in to can be saved.</p>
+  <script type="module" src="options.js"></script>
+</body></html>

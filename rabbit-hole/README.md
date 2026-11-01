@@ -12,6 +12,29 @@ A research archive you can listen to. Save a link (in any language) and it:
 
 You can also add **screenshots** of passages you liked. Claude reads the text in the screenshot, works out which saved article and paragraph it came from, and adds a highlight with the screenshot attached. **Search** works by meaning, in English, across every language you've saved. Every source has a **Chicago-style citation** ready to copy.
 
+## Saving things
+
+| Where you are | How to save |
+|---|---|
+| **Chrome on Android** | Share → **Rabbit Hole** (after installing the app to your home screen, see below). Chrome on Android doesn't support extensions, so the share sheet is the way in, just as it was for Pocket. |
+| **Chrome on a computer** | The **Rabbit Hole extension**: toolbar button or **Alt+Shift+S**. |
+| **Anywhere** | Paste a link into the box at the top of the library. |
+
+### The Chrome extension
+
+- **Toolbar button / Alt+Shift+S** saves the page you're reading. It sends the page *as you see it*, so articles you're logged in to (or past a paywall on) get saved too. Any text you've selected is saved as a highlight.
+- **Right-click selected text** → *Save selection to Rabbit Hole as a highlight*.
+- **Right-click a link** → *Save link to Rabbit Hole*, without opening it.
+- In the popup, **Screenshot visible part as a highlight** captures what's on screen and pins it to the passage it came from.
+
+**Install it (until it's in the Chrome Web Store):**
+
+1. In Chrome, go to `chrome://extensions` and turn on **Developer mode** (top right).
+2. Click **Load unpacked** and choose the `rabbit-hole/extension` folder.
+3. The settings page opens: enter your Rabbit Hole address and passphrase, click **Save and test**, and choose **Allow** when Chrome asks.
+
+Pin it to the toolbar from the puzzle-piece menu. Publishing it to the Chrome Web Store (a one-time $5 developer fee and a review) can come later.
+
 ## Where your data lives
 
 Everything is stored as plain files in `DATA_DIR`:
@@ -50,6 +73,8 @@ Any host that runs a Node app or a Docker container **with a persistent disk** w
 | `DATA_DIR` | a path on the persistent disk (e.g. `/data`) |
 
 Then open the site in Chrome on Android, sign in, and choose **⋮ → Add to Home screen / Install app**. Once installed, **Rabbit Hole shows up in Android's share sheet**: share any article from Chrome, and it's saved.
+
+The Chrome extension needs the app online too (or running on the same computer at `http://localhost:3000`).
 
 ## Things to know
 

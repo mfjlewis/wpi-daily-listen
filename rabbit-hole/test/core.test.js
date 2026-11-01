@@ -112,3 +112,18 @@ test("screenshot text is matched to the right article and paragraph", () => {
 
   assert.equal(matchScreenshot({ text: "Nothing like any saved article whatsoever here at all." }, items), null);
 });
+
+test("selected text is located in the original or the English", async () => {
+  const { matchSelection } = await import("../server/match.js");
+  const item = {
+    paragraphs: [
+      { orig: "Первый абзац о погоде.", en: "First paragraph about weather." },
+      { orig: "По словам епископа, закон 2011 года требует регистрации всех миссионеров.", en: "According to the bishop, the 2011 law requires registration of all missionaries." },
+      { orig: "Третий абзац.", en: "Third paragraph." },
+    ],
+  };
+  assert.deepEqual(matchSelection("закон 2011 года требует", item), { paragraphs: [1], side: "orig" });
+  assert.deepEqual(matchSelection("the 2011 law requires registration", item), { paragraphs: [1], side: "en" });
+  assert.deepEqual(matchSelection("Первый абзац о погоде.\nПо словам епископа", item).paragraphs, [0, 1]);
+  assert.equal(matchSelection("nothing like this at all anywhere", item), null);
+});

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import * as store from "./store.js";
-import { enqueue, resumePending, fileIntoThread, archiveItem } from "./pipeline.js";
+import { enqueue, resumePending, fileIntoThread, archiveItem, addPendingHighlight } from "./pipeline.js";
 import { DEMO, MODEL, readScreenshot, searchArchive } from "./claude.js";
 import { matchScreenshot } from "./match.js";
 
@@ -27,10 +27,17 @@ function cookies(req) {
     (req.headers.cookie || "").split(";").map((c) => c.trim().split("=").map(decodeURIComponent)).filter((p) => p[0]),
   );
 }
+function sameSecret(a, b) {
+  const ha = crypto.createHash("sha256").update(String(a)).digest();
+  const hb = crypto.createHash("sha256").update(String(b)).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
 function authed(req) {
   if (!APP_TOKEN) return true;
-  const v = cookies(req)[COOKIE] || "";
-  return v.length === sessionValue.length && crypto.timingSafeEqual(Buffer.from(v), Buffer.from(sessionValue));
+  // browser extension sends the passphrase as a bearer token
+  const bearer = /^Bearer (.+)$/.exec(req.headers.authorization || "");
+  if (bearer) return sameSecret(bearer[1], APP_TOKEN);
+  return sameSecret(cookies(req)[COOKIE] || "", sessionValue);
 }
 
 app.post("/api/login", (req, res) => {
@@ -93,16 +100,30 @@ function getItemOr404(req, res) {
   return item;
 }
 
-function addItem({ url, text, threadId }) {
+function addItem({ url, text, threadId, html, highlight }) {
   const clean = url ? normalizeUrl(url) : "";
   if (url && !clean) return { error: "That doesn't look like a web address." };
   if (clean && !text) {
     const existing = store.listItems().find((i) => i.url === clean);
-    if (existing) return { item: existing, duplicate: true };
+    if (existing) {
+      // the extension can rescue a page the server couldn't download
+      if (html && ["needs_text", "error"].includes(existing.status)) {
+        store.writeItemFile(existing.id, "snapshot.html", html);
+        store.updateItem(existing.id, { htmlProvided: true, status: "queued", error: "" });
+        enqueue(existing.id);
+      }
+      if (highlight) addPendingHighlight(existing.id, highlight);
+      return { item: store.getItem(existing.id), duplicate: true };
+    }
   }
   if (!clean && !text?.trim()) return { error: "Add a link or paste some text." };
   const item = store.createItem({ url: clean, text });
+  if (html) {
+    store.writeItemFile(item.id, "snapshot.html", html);
+    store.updateItem(item.id, { htmlProvided: true });
+  }
   if (threadId && store.getThread(threadId)) store.updateItem(item.id, { threadId });
+  if (highlight) addPendingHighlight(item.id, highlight);
   enqueue(item.id);
   return { item: store.getItem(item.id) };
 }
@@ -125,7 +146,9 @@ app.post("/api/items", (req, res) => {
     if (found && text.trim().length - found.length < 50) [url, text] = [found, ""];
     else if (found) url = found;
   }
-  const r = addItem({ url, text, threadId: req.body?.threadId });
+  const html = typeof req.body?.html === "string" && req.body.html.length > 200 ? req.body.html : "";
+  const highlight = req.body?.highlight ? { text: String(req.body.highlight).slice(0, 5000), note: String(req.body?.note || "") } : null;
+  const r = addItem({ url, text, threadId: req.body?.threadId, html, highlight });
   if (r.error) return res.status(400).json({ error: r.error });
   res.status(r.duplicate ? 200 : 201).json({ item: light(r.item), duplicate: !!r.duplicate });
 });

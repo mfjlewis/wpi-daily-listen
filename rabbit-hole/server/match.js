@@ -78,3 +78,52 @@ export function matchScreenshot(shot, items) {
   }
   return best && best.score >= 0.2 ? best : null;
 }
+
+/**
+ * Locate text the user selected on the page (from the browser extension)
+ * in a saved item. Returns { paragraphs, side } where side says whether the
+ * selection matched the original ("orig") or the English ("en", e.g. when
+ * the user was reading a browser-translated page). null if not found.
+ */
+export function matchSelection(text, item) {
+  const pieces = String(text || "")
+    .split(/\n+/)
+    .map((s) => s.trim())
+    .filter((s) => norm(s).length >= 3);
+  if (!pieces.length) return null;
+  const paras = item.paragraphs || [];
+  const hits = new Set();
+  const sides = { orig: 0, en: 0 };
+  for (const piece of pieces) {
+    const n = norm(piece);
+    let found = false;
+    for (const side of ["orig", "en"]) {
+      const i = paras.findIndex((p) => norm(p[side]).includes(n));
+      if (i >= 0) {
+        hits.add(i);
+        sides[side]++;
+        found = true;
+        break;
+      }
+    }
+    if (!found && n.split(" ").length >= 4) {
+      // fuzzy fallback for selections that cross formatting the extractor flattened
+      const g = bigrams(piece);
+      let best = -1;
+      let bs = 0;
+      let bside = "orig";
+      paras.forEach((p, i) => {
+        for (const side of ["orig", "en"]) {
+          const s = overlap(g, bigrams(p[side]));
+          if (s > bs) [bs, best, bside] = [s, i, side];
+        }
+      });
+      if (bs >= 0.5) {
+        hits.add(best);
+        sides[bside]++;
+      }
+    }
+  }
+  if (!hits.size) return null;
+  return { paragraphs: [...hits].sort((a, b) => a - b), side: sides.en > sides.orig ? "en" : "orig" };
+}

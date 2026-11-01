@@ -6,6 +6,10 @@ import * as store from "./store.js";
 import { fetchPage, extractArticle, paragraphsFromText, FetchError } from "./extract.js";
 import { analyzeArticle, translateAndPrepare, assignThread } from "./claude.js";
 import { archiveUrl } from "./wayback.js";
+import { matchSelection } from "./match.js";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 
 const queue = [];
 let running = false;
@@ -62,10 +66,20 @@ async function processItem(id) {
   if (item.pastedText?.trim()) {
     paragraphs = paragraphsFromText(item.pastedText);
   } else if (item.url) {
-    setStatus(id, "fetching", "Downloading the page");
-    const { html, finalUrl } = await fetchPage(item.url);
-    store.writeItemFile(id, "snapshot.html", html);
-    const ex = extractArticle(html, finalUrl);
+    let ex = null;
+    const snap = path.join(store.itemDir(id), "snapshot.html");
+    if (item.htmlProvided && fs.existsSync(snap)) {
+      // page as the user saw it in their browser (sent by the extension)
+      setStatus(id, "fetching", "Reading the page you saved");
+      ex = extractArticle(fs.readFileSync(snap, "utf8"), item.url);
+      if (ex.paragraphs.join(" ").length < 300) ex = null;
+    }
+    if (!ex) {
+      setStatus(id, "fetching", "Downloading the page");
+      const { html, finalUrl } = await fetchPage(item.url);
+      store.writeItemFile(id, "snapshot.html", html);
+      ex = extractArticle(html, finalUrl);
+    }
     metaHints = ex.meta;
     paragraphs = ex.paragraphs;
     if (paragraphs.join(" ").length < 300) {
@@ -113,6 +127,7 @@ async function processItem(id) {
   }
 
   store.updateItem(id, { status: "done", statusDetail: "", error: "", pastedText: "" });
+  applyPendingHighlights(id);
   if (item.url) archive(id);
 }
 
@@ -146,3 +161,40 @@ async function archive(id) {
 }
 
 export { archive as archiveItem };
+
+// ---------------------------------------------------------------- selections from the extension
+
+export function addPendingHighlight(id, { text, note = "" }) {
+  const it = store.getItem(id);
+  const same = (s) => (s || "").trim() === text.trim();
+  // saving the same page twice with the same text still selected shouldn't double up
+  if (it.highlights.some((h) => same(h.quoteOrig) || same(h.quoteEn)) || (it.pendingHighlights || []).some((h) => same(h.text))) return;
+  store.updateItem(id, (it) => ({ pendingHighlights: [...(it.pendingHighlights || []), { text, note }] }));
+  if (store.getItem(id).status === "done") applyPendingHighlights(id);
+}
+
+function applyPendingHighlights(id) {
+  const item = store.getItem(id);
+  const pending = item?.pendingHighlights || [];
+  if (!pending.length || !item.paragraphs.length) return;
+  for (const { text, note } of pending) {
+    const m = matchSelection(text, item);
+    const paras = m?.paragraphs || [];
+    const joined = (side) => paras.map((i) => item.paragraphs[i][side]).join("\n\n");
+    item.highlights.push({
+      id: crypto.randomBytes(4).toString("hex"),
+      paragraph: paras[0] ?? 0,
+      paragraphs: paras,
+      // keep exactly what was selected on the side it was selected from;
+      // the other side is the whole matching paragraph(s)
+      quoteOrig: m?.side === "en" ? joined("orig") : text,
+      quoteEn: m?.side === "en" ? text : paras.length ? joined("en") : "",
+      note: note || (m ? "" : "Selected text (couldn't locate it in the saved text)"),
+      screenshot: "",
+      createdAt: new Date().toISOString(),
+    });
+  }
+  item.highlights.sort((a, b) => a.paragraph - b.paragraph);
+  item.pendingHighlights = [];
+  store.saveItem(item);
+}
