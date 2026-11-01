@@ -234,6 +234,59 @@ export async function searchArchive({ query, catalog }) {
   });
 }
 
+// ---------------------------------------------------------------- uploaded files
+
+const FILE_SCHEMA = obj({
+  type: { type: "string", enum: ["book", "journal", "chapter", "report", "web", "other"] },
+  language: str,
+  languageName: str,
+  title: str,
+  titleEn: str,
+  authors: strArr,
+  editors: strArr,
+  publisher: str,
+  place: str,
+  journal: str,
+  bookTitle: str,
+  volume: str,
+  issue: str,
+  pages: str,
+  publishedAt: str,
+  summary: str,
+  tags: obj({ people: strArr, places: strArr, organizations: strArr, topics: strArr }),
+});
+
+const FILE_SYSTEM = `You catalog documents a journalist keeps as reference material in a research archive: books, journal articles, book chapters, reports, scans and photos of pages. You see only the first few pages (or a single image), not the whole document. Produce accurate citation details and tags so it can be found and cited years from now.
+
+Rules:
+- type: "book" for a whole book, "journal" for a journal or magazine article, "chapter" for a chapter in an edited volume, "report" for reports, theses and official documents, "web" for a printout of a web page, "other" otherwise.
+- Take bibliographic details from the title page, copyright page, running heads or first page. Never guess: use "" or [] for anything not shown.
+- title: exactly as printed, original language and script. titleEn: English translation (identical if already English). For a chapter, bookTitle is the volume it appears in.
+- authors and editors: as printed; transliterate non-Latin scripts to Latin script.
+- publishedAt: year (or YYYY-MM-DD if a full date is printed). place: city of publication. pages: page range for an article or chapter, if printed.
+- summary: 1–3 plain English sentences saying what this work is about, based on what you can see (contents pages, abstract, introduction). Say "Based on the opening pages" if you are inferring scope.
+- tags.people: usual English spelling, no titles. tags.topics: 3–6 short lowercase noun phrases; reuse the archive's existing tags when one fits.`;
+
+export async function catalogFile({ base64, mediaType, fileName, pageCount, vocabulary }) {
+  if (DEMO) return demo.catalogFile({ fileName });
+  const block =
+    mediaType === "application/pdf"
+      ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } }
+      : { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } };
+  return callJSON({
+    system: FILE_SYSTEM,
+    content: [
+      block,
+      {
+        type: "text",
+        text: `File name: ${fileName}${pageCount ? `\nTotal pages in the full document: ${pageCount} (you are seeing only the first few)` : ""}\nExisting tag vocabulary in the archive: ${vocabulary.length ? vocabulary.join(", ") : "(none yet)"}`,
+      },
+    ],
+    schema: FILE_SCHEMA,
+    effort: "low",
+  });
+}
+
 // ---------------------------------------------------------------- demo mode
 
 const demo = {
@@ -273,6 +326,17 @@ const demo = {
   },
   readScreenshot() {
     return { text: "", language: "", english: "", demo: true };
+  },
+  catalogFile({ fileName }) {
+    const base = fileName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
+    return {
+      type: /\.pdf$/i.test(fileName) ? "book" : "other",
+      language: "en", languageName: "English",
+      title: base, titleEn: base, authors: [], editors: [], publisher: "", place: "", journal: "", bookTitle: "",
+      volume: "", issue: "", pages: "", publishedAt: "",
+      summary: "[Demo mode: no API key, so the file wasn't read.]",
+      tags: { people: [], places: [], organizations: [], topics: ["demo"] },
+    };
   },
   search({ query, catalog }) {
     const words = query.toLowerCase().split(/\W+/).filter((w) => w.length > 2);

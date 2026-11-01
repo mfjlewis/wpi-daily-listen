@@ -175,7 +175,7 @@ app.patch("/api/items/:id", async (req, res) => {
   const b = req.body || {};
   const oldThread = item.threadId;
   if (b.citation) {
-    const allowed = ["title", "titleEn", "authors", "outlet", "publishedAt", "url", "archiveUrl"];
+    const allowed = ["type", "title", "titleEn", "authors", "editors", "outlet", "publisher", "place", "journal", "bookTitle", "volume", "issue", "pages", "publishedAt", "url", "archiveUrl"];
     for (const k of allowed) if (k in b.citation) item.citation[k] = b.citation[k];
   }
   if (b.tags) item.tags = { ...item.tags, ...b.tags };
@@ -235,17 +235,60 @@ app.put("/api/items/:id/progress", (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------------------------------------------------------------- file uploads
+
+const MAX_UPLOAD = 300 * 1024 * 1024;
+const TYPES = {
+  pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif",
+  heic: "image/heic", tif: "image/tiff", tiff: "image/tiff", epub: "application/epub+zip", txt: "text/plain",
+  doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+};
+
+app.post("/api/upload", express.raw({ type: () => true, limit: MAX_UPLOAD }), (req, res) => {
+  const original = String(req.query.name || "upload").normalize("NFC");
+  const name = original.replace(/[\/\\:*?"<>|\x00-\x1f]+/g, "_").replace(/^\.+/, "").slice(0, 180) || "upload";
+  const bytes = req.body;
+  if (!Buffer.isBuffer(bytes) || bytes.length === 0) return res.status(400).json({ error: "Empty file." });
+  const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+  const existing = store.listItems().find((i) => i.file?.sha256 === sha256);
+  if (existing) return res.json({ item: light(existing), duplicate: true });
+
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  const mediaType = TYPES[ext] || req.headers["content-type"] || "application/octet-stream";
+  const item = store.createItem({ kind: "file", file: { name, size: bytes.length, mediaType, pages: 0, sha256 } });
+  store.writeItemFile(item.id, `file/${name}`, bytes);
+  const title = name.replace(/\.[^.]+$/, "").replace(/[_]+/g, " ");
+  store.updateItem(item.id, (it) => ({ citation: { ...it.citation, title, titleEn: title, type: "other", fileName: name } }));
+  const threadId = String(req.query.threadId || "");
+  if (threadId && store.getThread(threadId)) store.updateItem(item.id, { threadId });
+  enqueue(item.id);
+  res.status(201).json({ item: light(store.getItem(item.id)) });
+});
+
+app.get("/files/:id/file", (req, res) => {
+  const item = store.getItem(req.params.id);
+  if (!item?.file) return res.status(404).end();
+  const f = path.join(store.itemDir(item.id), "file", item.file.name);
+  if (!fs.existsSync(f)) return res.status(404).end();
+  res.setHeader("Content-Type", item.file.mediaType);
+  res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(item.file.name)}`);
+  res.sendFile(f);
+});
+
 // ---------------------------------------------------------------- highlights
 
 app.post("/api/items/:id/highlights", (req, res) => {
   const item = getItemOr404(req, res);
   if (!item) return;
-  const i = Number(req.body?.paragraph);
-  const p = item.paragraphs[i];
+  const isFile = item.kind === "file";
+  const i = isFile ? 0 : Number(req.body?.paragraph);
+  const p = isFile ? { orig: "", en: "" } : item.paragraphs[i];
   if (!p) return res.status(400).json({ error: "No such paragraph." });
+  if (isFile && !String(req.body?.quoteOrig || req.body?.note || "").trim()) return res.status(400).json({ error: "Add a quote or a note." });
   const h = {
     id: crypto.randomBytes(4).toString("hex"),
     paragraph: i,
+    ...(isFile ? { paragraphs: [], page: String(req.body?.page || "").trim() } : {}),
     quoteOrig: req.body?.quoteOrig || p.orig,
     quoteEn: req.body?.quoteEn || p.en,
     note: req.body?.note || "",
@@ -253,7 +296,7 @@ app.post("/api/items/:id/highlights", (req, res) => {
     createdAt: new Date().toISOString(),
   };
   item.highlights.push(h);
-  item.highlights.sort((a, b) => a.paragraph - b.paragraph);
+  item.highlights.sort((a, b) => (isFile ? (parseInt(a.page) || 0) - (parseInt(b.page) || 0) : a.paragraph - b.paragraph));
   store.saveItem(item);
   res.status(201).json({ highlight: h });
 });
@@ -322,7 +365,7 @@ app.post("/api/screenshots", async (req, res) => {
       paragraphs: [],
       quoteOrig: ocr.text || "",
       quoteEn: ocr.english || "",
-      note: "Screenshot (couldn't locate the passage in the saved text)",
+      note: target.kind === "file" ? "" : "Screenshot (couldn't locate the passage in the saved text)",
       screenshot: name,
       createdAt: new Date().toISOString(),
     };
@@ -390,7 +433,8 @@ app.get("/api/search", async (req, res) => {
     id: i.id,
     title: i.citation.title,
     titleEn: i.citation.titleEn,
-    outlet: i.citation.outlet,
+    outlet: i.citation.outlet || i.citation.journal || i.citation.publisher,
+    type: i.kind === "file" ? i.citation.type || "file" : "web article",
     authors: i.citation.authors,
     date: i.citation.publishedAt,
     language: i.citation.languageName,

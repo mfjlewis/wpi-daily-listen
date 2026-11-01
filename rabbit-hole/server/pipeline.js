@@ -4,7 +4,8 @@
 
 import * as store from "./store.js";
 import { fetchPage, extractArticle, paragraphsFromText, FetchError } from "./extract.js";
-import { analyzeArticle, translateAndPrepare, assignThread } from "./claude.js";
+import { analyzeArticle, translateAndPrepare, assignThread, catalogFile } from "./claude.js";
+import { PDFDocument } from "pdf-lib";
 import { archiveUrl } from "./wayback.js";
 import { matchSelection } from "./match.js";
 import crypto from "node:crypto";
@@ -22,7 +23,7 @@ export function enqueue(id) {
 export function resumePending() {
   for (const item of store.listItems().slice().reverse()) {
     if (!["done", "error", "needs_text"].includes(item.status)) enqueue(item.id);
-    else if (item.status === "done" && item.citation.archiveStatus === "pending") archive(item.id);
+    else if (item.status === "done" && item.url && item.citation.archiveStatus === "pending") archive(item.id);
   }
 }
 
@@ -59,6 +60,7 @@ function tagVocabulary() {
 async function processItem(id) {
   let item = store.getItem(id);
   if (!item) return;
+  if (item.kind === "file") return processFile(id);
 
   // 1. get the text
   let metaHints = { title: "", authors: [], outlet: "", publishedAt: "", language: "" };
@@ -197,4 +199,82 @@ function applyPendingHighlights(id) {
   item.highlights.sort((a, b) => a.paragraph - b.paragraph);
   item.pendingHighlights = [];
   store.saveItem(item);
+}
+
+// ---------------------------------------------------------------- uploaded files
+// Files are reference material: we read only the first few pages to get
+// citation details, a short description and tags. No translation or audio.
+
+const PREVIEW_PAGES = 8;
+const CLAUDE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+async function firstPages(bytes) {
+  const src = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+  const total = src.getPageCount();
+  if (total <= PREVIEW_PAGES && bytes.length < 20_000_000) return { pdf: bytes, total };
+  const out = await PDFDocument.create();
+  const pages = await out.copyPages(src, [...Array(Math.min(PREVIEW_PAGES, total)).keys()]);
+  pages.forEach((p) => out.addPage(p));
+  return { pdf: Buffer.from(await out.save()), total };
+}
+
+async function processFile(id) {
+  const item = store.getItem(id);
+  const f = item.file;
+  const bytes = fs.readFileSync(path.join(store.itemDir(id), "file", f.name));
+  setStatus(id, "analyzing", "Reading the first pages for citation details");
+
+  let input = null;
+  let pages = f.pages || 0;
+  let problem = "";
+  try {
+    if (f.mediaType === "application/pdf") {
+      const { pdf, total } = await firstPages(bytes);
+      pages = total;
+      input = { base64: Buffer.from(pdf).toString("base64"), mediaType: "application/pdf" };
+    } else if (CLAUDE_IMAGE_TYPES.includes(f.mediaType) && bytes.length < 5_000_000) {
+      input = { base64: bytes.toString("base64"), mediaType: f.mediaType };
+    } else {
+      problem = "Stored as-is. This kind of file isn't read automatically, so add the citation details yourself.";
+    }
+  } catch (e) {
+    problem = `Couldn't open the file to read it (${e.message}). It's stored; add the citation details yourself.`;
+  }
+
+  if (input) {
+    try {
+      const a = await catalogFile({ ...input, fileName: f.name, pageCount: pages, vocabulary: tagVocabulary() });
+      store.updateItem(id, (it) => ({
+        citation: {
+          ...it.citation,
+          type: a.type || "other",
+          title: a.title || it.citation.title,
+          titleEn: a.titleEn || a.title || it.citation.titleEn,
+          authors: a.authors || [],
+          editors: a.editors || [],
+          publisher: a.publisher || "",
+          place: a.place || "",
+          journal: a.journal || "",
+          bookTitle: a.bookTitle || "",
+          volume: a.volume || "",
+          issue: a.issue || "",
+          pages: a.pages || "",
+          publishedAt: a.publishedAt || "",
+          language: a.language || "",
+          languageName: a.languageName || "",
+        },
+        summary: a.summary || "",
+        tags: a.tags || it.tags,
+      }));
+    } catch (e) {
+      problem = `Couldn't read the citation details automatically (${e.message}). Add them yourself.`;
+    }
+  }
+
+  store.updateItem(id, (it) => ({ file: { ...it.file, pages }, error: problem }));
+  if (!store.getItem(id).threadId) {
+    setStatus(id, "filing", "Filing into a research thread");
+    await fileIntoThread(id);
+  }
+  store.updateItem(id, { status: "done", statusDetail: "", error: problem });
 }

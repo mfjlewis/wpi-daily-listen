@@ -127,3 +127,13 @@ test("selected text is located in the original or the English", async () => {
   assert.deepEqual(matchSelection("Первый абзац о погоде.\nПо словам епископа", item).paragraphs, [0, 1]);
   assert.equal(matchSelection("nothing like this at all anywhere", item), null);
 });
+
+test("Chicago citations for books, journal articles and chapters", () => {
+  const book = { type: "book", title: "Christians in the Muslim World", authors: ["Jane Smith"], publisher: "Oxford University Press", place: "Oxford", publishedAt: "2015" };
+  assert.equal(chicagoCitation(book, { plain: true }), "Smith, Jane. Christians in the Muslim World. Oxford: Oxford University Press, 2015.");
+  assert.match(chicagoCitation(book), /<i>Christians in the Muslim World<\/i>/);
+  const art = { type: "journal", title: "Monks under the Caliphs", authors: ["A B", "C D"], journal: "Journal of Eastern Christian Studies", volume: "62", issue: "3", publishedAt: "2010", pages: "201–230" };
+  assert.equal(chicagoCitation(art, { plain: true }), "B, A, and C D. “Monks under the Caliphs.” Journal of Eastern Christian Studies 62, no. 3 (2010): 201–230.");
+  const ch = { type: "chapter", title: "Syriac Scholars", authors: ["Ann Lee"], bookTitle: "Faith and Empire", editors: ["Tom Ray"], pages: "45–67", publisher: "Brill", place: "Leiden", publishedAt: "2019" };
+  assert.equal(chicagoCitation(ch, { plain: true }), "Lee, Ann. “Syriac Scholars.” In Faith and Empire, edited by Tom Ray, 45–67. Leiden: Brill, 2019.");
+});

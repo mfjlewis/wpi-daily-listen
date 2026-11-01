@@ -10,6 +10,8 @@ A research archive you can listen to. Save a link (in any language) and it:
 6. **Tags it** (people, places, organizations, topics) and **files it into a research thread** automatically.
 7. **Plays it aloud**, remembering where you stopped. A whole thread can play back to back.
 
+You can also **upload files** into a project: PDFs (papers, books, scans), photos of pages, images, Word files or EPUBs. These are kept as reference material, not translated or read aloud. Claude reads only the first few pages to fill in the citation details (author, title, publisher or journal, year, pages), a short description and tags, which costs about the same however long the book is. The file opens with one tap, gets a book- or journal-style Chicago citation, shows up in search, and can carry your own **notes and quotes with page numbers**.
+
 You can also add **screenshots** of passages you liked. Claude reads the text in the screenshot, works out which saved article and paragraph it came from, and adds a highlight with the screenshot attached. **Search** works by meaning, in English, across every language you've saved. Every source has a **Chicago-style citation** ready to copy.
 
 ## Saving things
@@ -44,6 +46,7 @@ data/items/<id>/item.md          readable: citation, summary, highlights, origin
 data/items/<id>/item.json        same data, machine-readable
 data/items/<id>/snapshot.html    the page as downloaded
 data/items/<id>/screenshots/     your screenshots
+data/items/<id>/file/            an uploaded PDF, scan or document, unchanged
 data/threads/<id>.json           research threads and your notes
 ```
 

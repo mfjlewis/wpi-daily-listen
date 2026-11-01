@@ -40,28 +40,88 @@ function endWithPeriod(s) {
   return /[.!?]$/.test(s) ? s : `${s}.`;
 }
 
+function titleWithTranslation(c, esc, { italic = false, plain = false } = {}) {
+  const clean = (t) => esc(String(t).replace(/[.\s]+$/, ""));
+  const wrap = (t) => (italic && !plain ? `<i>${t}</i>` : t);
+  const title = c.title || c.titleEn || c.fileName || c.url || "Untitled";
+  const translated = c.titleEn && c.title && c.titleEn.trim() !== c.title.trim() ? ` [${clean(c.titleEn)}]` : "";
+  return { title: wrap(clean(title)), translated };
+}
+
 /**
+ * Chicago bibliography entry. Handles web articles (default), books,
+ * journal articles, chapters in edited books, and reports.
  * @param {object} c citation object from an item
- * @param {{plain?: boolean}} opts plain=true returns text; otherwise HTML with <i> for the outlet
+ * @param {{plain?: boolean}} opts plain=true returns text; otherwise HTML with <i> for italics
  */
 export function chicagoCitation(c, opts = {}) {
   const esc = opts.plain ? (s) => s : (s) => String(s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+  const it = (s) => (opts.plain ? s : `<i>${esc(s)}</i>`);
   const parts = [];
   const authors = authorList(c.authors);
-  if (authors) parts.push(esc(endWithPeriod(authors)));
+  const type = c.type || "web";
+  const year = (c.publishedAt || "").slice(0, 4);
 
-  const title = c.title || c.titleEn || c.url;
-  let t = `“${esc(title.replace(/[.\s]+$/, ""))}.”`;
-  if (c.titleEn && c.title && c.titleEn.trim() !== c.title.trim()) {
-    t = `“${esc(c.title.replace(/[.\s]+$/, ""))}” [${esc(c.titleEn.replace(/[.\s]+$/, ""))}].`;
+  if (type === "book" || type === "report") {
+    if (authors) parts.push(esc(endWithPeriod(authors)));
+    else if (c.editors?.length) parts.push(esc(endWithPeriod(`${authorList(c.editors)}, ${c.editors.length > 1 ? "eds" : "ed"}`)));
+    const t = titleWithTranslation(c, esc, { italic: true, plain: opts.plain });
+    parts.push(`${t.title}${t.translated}.`);
+    if (authors && c.editors?.length) parts.push(esc(`Edited by ${c.editors.join(" and ")}.`));
+    const pub = [c.place && `${c.place}:`, c.publisher].filter(Boolean).join(" ");
+    const tail = [pub, year].filter(Boolean).join(", ");
+    if (tail) parts.push(`${esc(tail)}.`);
+    if (c.url) parts.push(`${esc(c.url)}.`);
+    return parts.join(" ");
   }
-  parts.push(t);
 
+  if (type === "journal") {
+    if (authors) parts.push(esc(endWithPeriod(authors)));
+    const t = titleWithTranslation(c, esc);
+    parts.push(t.translated ? `“${t.title}”${t.translated}.` : `“${t.title}.”`);
+    let j = c.journal ? it(c.journal) : "";
+    if (c.volume) j += ` ${esc(c.volume)}`;
+    if (c.issue) j += `, no. ${esc(c.issue)}`;
+    if (year) j += ` (${esc(year)})`;
+    if (c.pages) j += `: ${esc(c.pages)}`;
+    if (j.trim()) parts.push(`${j.trim()}.`);
+    if (c.url) parts.push(`${esc(c.url)}.`);
+    return parts.join(" ");
+  }
+
+  if (type === "chapter") {
+    if (authors) parts.push(esc(endWithPeriod(authors)));
+    const t = titleWithTranslation(c, esc);
+    parts.push(t.translated ? `“${t.title}”${t.translated}.` : `“${t.title}.”`);
+    let inBook = c.bookTitle ? `In ${it(c.bookTitle)}` : "";
+    if (c.editors?.length) inBook += `${inBook ? ", " : ""}edited by ${esc(c.editors.join(" and "))}`;
+    if (c.pages) inBook += `, ${esc(c.pages)}`;
+    if (inBook) parts.push(`${inBook}.`);
+    const pub = [c.place && `${c.place}:`, c.publisher].filter(Boolean).join(" ");
+    const tail = [pub, year].filter(Boolean).join(", ");
+    if (tail) parts.push(`${esc(tail)}.`);
+    if (c.url) parts.push(`${esc(c.url)}.`);
+    return parts.join(" ");
+  }
+
+  // web article
+  if (authors) parts.push(esc(endWithPeriod(authors)));
+  const t = titleWithTranslation(c, esc);
+  parts.push(t.translated ? `“${t.title}”${t.translated}.` : `“${t.title}.”`);
   const pub = [];
-  if (c.outlet) pub.push(opts.plain ? c.outlet : `<i>${esc(c.outlet)}</i>`);
+  if (c.outlet) pub.push(it(c.outlet));
   if (c.publishedAt) pub.push(formatDate(c.publishedAt));
   if (pub.length) parts.push(`${pub.join(", ")}.`);
   if (!c.publishedAt && c.accessedAt) parts.push(`Accessed ${formatDate(c.accessedAt)}.`);
   if (c.url) parts.push(`${esc(c.url)}.`);
   return parts.join(" ");
 }
+
+export const SOURCE_TYPES = {
+  web: "Web article",
+  book: "Book",
+  journal: "Journal article",
+  chapter: "Book chapter",
+  report: "Report / document",
+  other: "Other",
+};

@@ -81,6 +81,8 @@ export function createItem(fields) {
   const now = new Date().toISOString();
   const item = {
     id: newId(),
+    kind: fields.kind || "web", // "web" (saved link/text) or "file" (uploaded PDF, scan, image, document)
+    file: fields.file || null, // { name, size, mediaType, pages, sha256 } for uploads
     url: fields.url || "",
     status: "queued", // queued | fetching | analyzing | translating | filing | done | needs_text | error
     statusDetail: "",
@@ -191,8 +193,9 @@ function itemMarkdown(item) {
   lines.push("");
   if (c.title && c.titleEn && c.title !== c.titleEn) lines.push(`Original title: ${c.title}`, "");
   lines.push(`- Citation (Chicago): ${chicagoCitation(c, { plain: true })}`);
-  lines.push(`- URL: ${c.url}`);
+  if (c.url) lines.push(`- URL: ${c.url}`);
   if (c.archiveUrl) lines.push(`- Archived copy: ${c.archiveUrl}`);
+  if (item.file) lines.push(`- File: file/${item.file.name}${item.file.pages ? ` (${item.file.pages} pages)` : ""}`);
   if (c.authors?.length) lines.push(`- Author(s): ${c.authors.join("; ")}`);
   if (c.outlet) lines.push(`- Outlet: ${c.outlet}`);
   if (c.publishedAt) lines.push(`- Published: ${c.publishedAt}`);
@@ -209,7 +212,8 @@ function itemMarkdown(item) {
     for (const h of item.highlights) {
       lines.push(`> ${h.quoteOrig || ""}`);
       if (h.quoteEn && h.quoteEn !== h.quoteOrig) lines.push(">", `> [EN, machine translation] ${h.quoteEn}`);
-      lines.push(`(paragraph ${h.paragraph + 1})${h.note ? ` — ${h.note}` : ""}`, "");
+      const where = h.page ? `p. ${h.page}` : item.kind === "file" ? "" : `paragraph ${h.paragraph + 1}`;
+      lines.push(`${where ? `(${where})` : ""}${h.note ? ` — ${h.note}` : ""}`, "");
     }
   }
   if (item.paragraphs?.length) {

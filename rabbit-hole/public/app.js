@@ -1,4 +1,4 @@
-import { chicagoCitation, formatDate } from "./citation.js";
+import { chicagoCitation, formatDate, SOURCE_TYPES } from "./citation.js";
 import { initPlayer, playItem, playThread, playFrom, supported as ttsSupported } from "./player.js";
 
 const view = document.getElementById("view");
@@ -78,14 +78,54 @@ function progressBar(i) {
 function itemCard(i, extra = "") {
   const c = i.citation;
   const orig = c.title && c.titleEn && c.title !== c.titleEn ? `<div class="orig">${esc(c.title)}</div>` : "";
-  const bits = [c.outlet, c.authors?.join(", "), c.publishedAt && formatDate(c.publishedAt), c.languageName].filter(Boolean);
+  const isFile = i.kind === "file";
+  const bits = isFile
+    ? [SOURCE_TYPES[c.type] || "File", c.authors?.join(", ") || c.editors?.join(", "), c.journal || c.publisher, c.publishedAt?.slice(0, 4), i.file?.pages && `${i.file.pages} pp.`]
+    : [c.outlet, c.authors?.join(", "), c.publishedAt && formatDate(c.publishedAt), c.languageName];
   return `<a class="card" href="#/item/${i.id}">
-    <h3>${esc(itemTitle(i))} ${statusBadge(i)}</h3>${orig}
-    <div class="meta">${esc(bits.join(" · "))}${i.highlightCount ? ` · ★ ${i.highlightCount}` : ""}${i.progress?.finished ? " · ✓ listened" : ""}</div>
+    <h3>${isFile ? fileIcon(i) + " " : ""}${esc(itemTitle(i))} ${statusBadge(i)}</h3>${orig}
+    <div class="meta">${esc(bits.filter(Boolean).join(" · "))}${i.highlightCount ? ` · ★ ${i.highlightCount}` : ""}${i.progress?.finished ? " · ✓ listened" : ""}</div>
     ${i.status !== "done" && i.statusDetail ? `<div class="meta">${esc(i.statusDetail)}…</div>` : ""}
     ${i.error ? `<div class="meta">${esc(i.error)}</div>` : ""}
     ${extra}${progressBar(i)}
   </a>`;
+}
+
+function fileIcon(i) {
+  const t = i.file?.mediaType || "";
+  return t.startsWith("image/") ? "🖼" : t === "application/pdf" ? "📕" : "📄";
+}
+
+// ---------------------------------------------------------------- file uploads
+
+function pickFiles(threadId) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.multiple = true;
+  input.accept = ".pdf,image/*,.epub,.doc,.docx,.txt,.tif,.tiff";
+  input.onchange = async () => {
+    const files = [...input.files];
+    let added = 0;
+    for (const [n, f] of files.entries()) {
+      toast(`Uploading ${files.length > 1 ? `${n + 1} of ${files.length}: ` : ""}${f.name}…`, 60000);
+      try {
+        const res = await fetch(`/api/upload?name=${encodeURIComponent(f.name)}${threadId ? `&threadId=${threadId}` : ""}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: f,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+        if (data.duplicate) toast(`${f.name} is already in your archive.`);
+        else added++;
+      } catch (e) {
+        toast(`${f.name}: ${e.message}`, 6000);
+      }
+    }
+    if (added) toast(`Added ${added} file${added > 1 ? "s" : ""}. Reading citation details…`);
+    route();
+  };
+  input.click();
 }
 
 function tagChips(tags) {
@@ -187,6 +227,7 @@ async function viewLibrary(params) {
       <textarea name="input" placeholder="Paste a link to save it. (If a site blocks downloads, paste the article text with its link.)" rows="2"></textarea>
       <div class="row">
         <button class="primary">Save</button>
+        <button type="button" id="addFiles">Add files</button>
         <button type="button" id="addShots">Add screenshots</button>
         <span class="grow"></span>
         <span class="muted small">${items.length} source${items.length === 1 ? "" : "s"} · ${threads.length} thread${threads.length === 1 ? "" : "s"}</span>
@@ -218,6 +259,7 @@ async function viewLibrary(params) {
     }
   };
   document.getElementById("addShots").onclick = () => pickScreenshots(null);
+  document.getElementById("addFiles").onclick = () => pickFiles(null);
   if (working.some((i) => !["error", "needs_text"].includes(i.status))) poll(route);
 }
 
@@ -231,12 +273,14 @@ function threadCard(t) {
 
 async function viewThread(id) {
   const { thread: t, items, highlights, citations, threads } = await api(`/api/threads/${id}`);
-  const firstUnfinished = items.find((i) => !i.progress.finished && i.status === "done") || items[0];
+  const listenable = items.filter((i) => i.kind !== "file" && i.status === "done");
+  const firstUnfinished = listenable.find((i) => !i.progress.finished) || listenable[0];
   view.innerHTML = `
     <p class="small"><a href="#/">← Library</a></p>
     <h1 id="tTitle">${esc(t.title)}</h1>
     <div class="row"><button class="small" id="rename">Rename</button>
-      ${ttsSupported() ? `<button class="primary" id="playAll">▶ ${firstUnfinished && firstUnfinished !== items[0] ? "Resume" : "Play"} thread</button>` : ""}
+      ${ttsSupported() && listenable.length ? `<button class="primary" id="playAll">▶ ${firstUnfinished && firstUnfinished !== listenable[0] ? "Resume" : "Play"} thread</button>` : ""}
+      <button class="small" id="addFiles">Add files</button>
       <button class="small" id="addShots">Add screenshots</button></div>
     <p>${esc(t.summary)}</p>
     <div class="meta">${t.count} sources · ${t.finished} listened · started ${formatDate(t.createdAt.slice(0, 10))}</div>
@@ -268,8 +312,9 @@ async function viewThread(id) {
     }
   };
   const playBtn = document.getElementById("playAll");
-  if (playBtn) playBtn.onclick = () => playThread(items.filter((i) => i.status === "done").map((i) => i.id), firstUnfinished?.id);
+  if (playBtn) playBtn.onclick = () => playThread(listenable.map((i) => i.id), firstUnfinished?.id);
   document.getElementById("addShots").onclick = () => pickScreenshots(null);
+  document.getElementById("addFiles").onclick = () => pickFiles(id);
   let notesTimer;
   document.getElementById("notes").oninput = (e) => {
     clearTimeout(notesTimer);
@@ -305,7 +350,12 @@ function highlightCard(h, withSource = false) {
   const differs = h.quoteEn && h.quoteEn.trim() !== h.quoteOrig?.trim();
   const itemId = h.itemId || currentItemId;
   return `<div class="card highlight-card">
-    ${withSource ? `<div class="meta"><a href="#/item/${h.itemId}">${esc(h.itemTitle)}</a> · ¶${h.paragraph + 1}</div>` : `<div class="meta">${h.paragraphs?.length === 0 && h.screenshot ? "Screenshot" : `¶${h.paragraph + 1}`}</div>`}
+    ${(() => {
+      const where = h.page ? `p. ${esc(h.page)}` : Array.isArray(h.paragraphs) && h.paragraphs.length === 0 ? (h.screenshot ? "Screenshot" : "") : `¶${h.paragraph + 1}`;
+      return withSource
+        ? `<div class="meta"><a href="#/item/${h.itemId}">${esc(h.itemTitle)}</a>${where ? ` · ${where}` : ""}</div>`
+        : where ? `<div class="meta">${where}</div>` : "";
+    })()}
     ${h.quoteOrig ? `<blockquote>${esc(h.quoteOrig)}</blockquote>` : ""}
     ${differs ? `<div class="en">EN (machine translation): ${esc(h.quoteEn)}</div>` : ""}
     ${h.screenshot ? `<a href="/files/${itemId}/${h.screenshot}" target="_blank"><img src="/files/${itemId}/${h.screenshot}" alt="Screenshot" loading="lazy"></a>` : ""}
@@ -341,6 +391,7 @@ let textMode = localStorage.getItem("rh.textMode") || "en";
 async function viewItem(id, params) {
   currentItemId = id;
   const { item, thread, threads } = await api(`/api/items/${id}`);
+  if (item.kind === "file") return viewFileItem(item, thread, threads);
   const c = item.citation;
   const translated = item.paragraphs.some((p) => p.en && p.en !== p.orig);
   if (params.get("duplicate")) toast("You'd already saved this one.");
@@ -400,15 +451,7 @@ async function viewItem(id, params) {
       </details>
     </div>
 
-    <div class="row small">
-      <span class="muted">Thread:</span>
-      <select id="threadSel" style="width:auto;max-width:100%">
-        ${threads.map((t) => `<option value="${t.id}" ${t.id === item.threadId ? "selected" : ""}>${esc(t.title)}</option>`).join("")}
-        ${item.threadId ? "" : `<option value="" selected>(not filed)</option>`}
-        <option value="new">+ New thread…</option>
-        <option value="auto">Let Claude re-file it</option>
-      </select>
-    </div>
+    ${threadSelect(item, threads)}
     ${item.summary ? `<p>${esc(item.summary)}</p>` : ""}
     ${tagChips(item.tags)}
 
@@ -453,22 +496,7 @@ async function viewItem(id, params) {
     };
   });
   bindHighlightButtons();
-  document.getElementById("threadSel").onchange = async (e) => {
-    let body = { threadId: e.target.value };
-    if (body.threadId === "new") {
-      const title = prompt("Name the new thread");
-      if (!title) return route();
-      body.newThreadTitle = title;
-    }
-    if (!body.threadId) return;
-    try {
-      await api(`/api/items/${id}`, { method: "PATCH", body });
-      toast("Moved.");
-    } catch (err) {
-      toast(err.message);
-    }
-    route();
-  };
+  bindThreadSelect(id);
   document.getElementById("citeForm").onsubmit = async (e) => {
     e.preventDefault();
     const f = e.target;
@@ -520,6 +548,152 @@ async function viewItem(id, params) {
   };
   markNowPlaying();
   if (!["done", "error", "needs_text"].includes(item.status) || ["working", "pending"].includes(c.archiveStatus)) poll(route, item.status === "done" ? 6000 : 2500);
+}
+
+function threadSelect(item, threads) {
+  return `<div class="row small">
+      <span class="muted">Thread:</span>
+      <select id="threadSel" style="width:auto;max-width:100%">
+        ${threads.map((t) => `<option value="${t.id}" ${t.id === item.threadId ? "selected" : ""}>${esc(t.title)}</option>`).join("")}
+        ${item.threadId ? "" : `<option value="" selected>(not filed)</option>`}
+        <option value="new">+ New thread…</option>
+        <option value="auto">Let Claude re-file it</option>
+      </select>
+    </div>`;
+}
+
+function bindThreadSelect(id) {
+  document.getElementById("threadSel").onchange = async (e) => {
+    const body = { threadId: e.target.value };
+    if (body.threadId === "new") {
+      const title = prompt("Name the new thread");
+      if (!title) return route();
+      body.newThreadTitle = title;
+    }
+    if (!body.threadId) return;
+    try {
+      await api(`/api/items/${id}`, { method: "PATCH", body });
+      toast("Moved.");
+    } catch (err) {
+      toast(err.message);
+    }
+    route();
+  };
+}
+
+// Uploaded PDFs, scans, images and documents: kept as reference material,
+// with citation details, a description, tags and your own page-numbered notes.
+function viewFileItem(item, thread, threads) {
+  const id = item.id;
+  const c = item.citation;
+  const f = item.file;
+  const fileUrl = `/files/${id}/file`;
+  const busy = !["done", "error", "needs_text"].includes(item.status);
+  const field = (name, label, value, hint = "") =>
+    `<label>${label}${hint ? ` <span class="muted small">${hint}</span>` : ""} <input type="text" name="${name}" value="${esc(value || "")}"></label>`;
+
+  view.innerHTML = `
+    <p class="small">${thread ? `<a href="#/thread/${thread.id}">← ${esc(thread.title)}</a>` : `<a href="#/">← Library</a>`}</p>
+    ${busy ? `<div class="card" style="background:var(--warn)">${STATUS_LABEL[item.status] || item.status}… ${esc(item.statusDetail || "")}</div>` : ""}
+    ${item.error ? `<div class="card" style="background:var(--warn)">${esc(item.error)}</div>` : ""}
+    <h1>${fileIcon(item)} ${esc(itemTitle(item))}</h1>
+    ${c.title && c.titleEn && c.title !== c.titleEn ? `<p class="muted" style="margin-top:0;font-family:var(--serif)">${esc(c.title)}</p>` : ""}
+    <div class="row">
+      <a href="${fileUrl}" target="_blank" rel="noopener"><button class="primary">Open file</button></a>
+      <button id="copyCite">Copy citation</button>
+      <button id="addShot">Add screenshot of a page</button>
+    </div>
+    ${f.mediaType.startsWith("image/") ? `<p><a href="${fileUrl}" target="_blank"><img src="${fileUrl}" alt="" style="max-width:100%;max-height:360px;border-radius:8px;border:1px solid var(--line)"></a></p>` : ""}
+
+    <div class="card">
+      <dl class="facts">
+        <dt>Type</dt><dd>${esc(SOURCE_TYPES[c.type] || "—")}</dd>
+        <dt>Author</dt><dd>${esc(c.authors?.join("; ") || "—")}</dd>
+        ${c.editors?.length ? `<dt>Editor</dt><dd>${esc(c.editors.join("; "))}</dd>` : ""}
+        ${c.journal ? `<dt>Journal</dt><dd>${esc(c.journal)}${c.volume ? ` ${esc(c.volume)}` : ""}${c.issue ? `, no. ${esc(c.issue)}` : ""}</dd>` : ""}
+        ${c.bookTitle ? `<dt>In</dt><dd>${esc(c.bookTitle)}</dd>` : ""}
+        ${c.publisher ? `<dt>Publisher</dt><dd>${esc([c.place, c.publisher].filter(Boolean).join(": "))}</dd>` : ""}
+        <dt>Year</dt><dd>${esc(c.publishedAt || "unknown")}</dd>
+        ${c.languageName ? `<dt>Language</dt><dd>${esc(c.languageName)}</dd>` : ""}
+        <dt>File</dt><dd>${esc(f.name)} · ${f.size < 1048576 ? `${Math.max(1, Math.round(f.size / 1024))} KB` : `${(f.size / 1048576).toFixed(1)} MB`}${f.pages ? ` · ${f.pages} pages` : ""}</dd>
+        <dt>Added</dt><dd>${formatDate(item.savedAt.slice(0, 10))}</dd>
+      </dl>
+      <p class="citation">${chicagoCitation(c)}</p>
+      <details ${item.error && !c.authors?.length ? "open" : ""}><summary>Fix citation details</summary>
+        <form id="citeForm" style="display:grid;gap:.4rem;margin-top:.5rem">
+          <label>Type <select name="type">${Object.entries(SOURCE_TYPES).filter(([k]) => k !== "web").map(([k, v]) => `<option value="${k}" ${k === c.type ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+          ${field("title", "Title", c.title, "as printed")}
+          ${field("titleEn", "English title", c.titleEn, "if different")}
+          ${field("authors", "Authors", (c.authors || []).join("; "), "separate with ;")}
+          ${field("editors", "Editors", (c.editors || []).join("; "), "separate with ;")}
+          ${field("bookTitle", "Book title", c.bookTitle, "for a chapter")}
+          ${field("journal", "Journal", c.journal)}
+          <div class="row">${field("volume", "Volume", c.volume)}${field("issue", "Issue", c.issue)}${field("pages", "Pages", c.pages, "e.g. 45–67")}</div>
+          <div class="row">${field("place", "Place", c.place)}${field("publisher", "Publisher", c.publisher)}${field("publishedAt", "Year", c.publishedAt)}</div>
+          <div><button class="primary">Save</button></div>
+        </form>
+      </details>
+    </div>
+
+    ${threadSelect(item, threads)}
+    ${item.summary ? `<p>${esc(item.summary)}</p>` : ""}
+    ${tagChips(item.tags)}
+
+    <h2>Notes &amp; quotes</h2>
+    <form id="noteForm" class="card" style="display:grid;gap:.5rem">
+      <div class="row"><label style="width:6rem">Page <input type="text" name="page" placeholder="e.g. 147"></label><span class="grow"></span></div>
+      <textarea name="quote" placeholder="Quote (exact wording, optional)" rows="3"></textarea>
+      <input type="text" name="note" placeholder="Your note (optional)">
+      <div><button class="primary">Add</button></div>
+    </form>
+    ${item.highlights.map((h) => highlightCard(h)).join("")}
+
+    <details style="margin-top:2rem"><summary>More</summary>
+      <div class="row" style="margin-top:.5rem">
+        <button id="reprocess">Re-read citation details</button>
+        <button id="delete">Delete this file</button>
+      </div>
+    </details>`;
+
+  document.getElementById("copyCite").onclick = () => copy(chicagoCitation(c, { plain: true }), chicagoCitation(c));
+  document.getElementById("addShot").onclick = () => pickScreenshots(id);
+  bindThreadSelect(id);
+  bindHighlightButtons();
+  document.getElementById("noteForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const fm = e.target;
+    try {
+      await api(`/api/items/${id}/highlights`, {
+        method: "POST",
+        body: { page: fm.page.value, quoteOrig: fm.quote.value.trim(), note: fm.note.value.trim() },
+      });
+      route();
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+  document.getElementById("citeForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const fm = e.target;
+    const list = (v) => v.split(";").map((x) => x.trim()).filter(Boolean);
+    const citation = { type: fm.type.value, authors: list(fm.authors.value), editors: list(fm.editors.value) };
+    for (const k of ["title", "titleEn", "bookTitle", "journal", "volume", "issue", "pages", "place", "publisher", "publishedAt"]) citation[k] = fm[k].value.trim();
+    if (!citation.titleEn) citation.titleEn = citation.title;
+    await api(`/api/items/${id}`, { method: "PATCH", body: { citation } });
+    toast("Citation updated.");
+    route();
+  };
+  document.getElementById("reprocess").onclick = async () => {
+    if (!confirm("Read the first pages again for citation details and tags? Your edits to the citation will be replaced.")) return;
+    await api(`/api/items/${id}/reprocess`, { method: "POST" });
+    route();
+  };
+  document.getElementById("delete").onclick = async () => {
+    if (!confirm("Delete this file, its notes and screenshots?")) return;
+    await api(`/api/items/${id}`, { method: "DELETE" });
+    location.hash = thread ? `#/thread/${thread.id}` : "#/";
+  };
+  if (busy) poll(route);
 }
 
 function renderParagraphs(item, hlParas, translated) {
