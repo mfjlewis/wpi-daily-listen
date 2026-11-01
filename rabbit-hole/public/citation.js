@@ -43,7 +43,8 @@ function endWithPeriod(s) {
 function titleWithTranslation(c, esc, { italic = false, plain = false } = {}) {
   const clean = (t) => esc(String(t).replace(/[.\s]+$/, ""));
   const wrap = (t) => (italic && !plain ? `<i>${t}</i>` : t);
-  const title = c.title || c.titleEn || c.fileName || c.url || "Untitled";
+  // Chicago: non-Latin-script titles are cited in romanized form
+  const title = c.titleTranslit || c.title || c.titleEn || c.fileName || c.url || "Untitled";
   const translated = c.titleEn && c.title && c.titleEn.trim() !== c.title.trim() ? ` [${clean(c.titleEn)}]` : "";
   return { title: wrap(clean(title)), translated };
 }
@@ -104,12 +105,20 @@ export function chicagoCitation(c, opts = {}) {
     return parts.join(" ");
   }
 
+  if (type === "image") {
+    const t = titleWithTranslation(c, esc);
+    parts.push(`${t.title}${t.translated}.`);
+    parts.push(year ? `Image, ${esc(year)}.` : "Image.");
+    if (c.url) parts.push(`${esc(c.url)}.`);
+    return parts.join(" ");
+  }
+
   // web article
   if (authors) parts.push(esc(endWithPeriod(authors)));
   const t = titleWithTranslation(c, esc);
   parts.push(t.translated ? `“${t.title}”${t.translated}.` : `“${t.title}.”`);
   const pub = [];
-  if (c.outlet) pub.push(it(c.outlet));
+  if (c.outlet) pub.push(it(c.outletTranslit || c.outlet));
   if (c.publishedAt) pub.push(formatDate(c.publishedAt));
   if (pub.length) parts.push(`${pub.join(", ")}.`);
   if (!c.publishedAt && c.accessedAt) parts.push(`Accessed ${formatDate(c.accessedAt)}.`);
@@ -123,5 +132,6 @@ export const SOURCE_TYPES = {
   journal: "Journal article",
   chapter: "Book chapter",
   report: "Report / document",
+  image: "Image",
   other: "Other",
 };

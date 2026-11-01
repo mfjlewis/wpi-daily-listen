@@ -91,6 +91,20 @@ function itemCard(i, extra = "") {
   </a>`;
 }
 
+function isImage(i) {
+  return i.kind === "file" && (i.file?.mediaType || "").startsWith("image/");
+}
+
+function gallery(images) {
+  return `<div class="gallery">${images
+    .map(
+      (i) => `<a href="#/item/${i.id}" title="${esc(i.summary || "")}">
+        ${i.status === "done" ? `<img src="/files/${i.id}/thumb" alt="${esc(itemTitle(i))}" loading="lazy" onerror="this.onerror=null;this.src='/files/${i.id}/file'">` : `<img alt="">`}
+        <div class="cap">${esc(itemTitle(i))}${i.status !== "done" ? ` <span class="muted">(${STATUS_LABEL[i.status] || i.status}…)</span>` : ""}</div></a>`,
+    )
+    .join("")}</div>`;
+}
+
 function fileIcon(i) {
   const t = i.file?.mediaType || "";
   return t.startsWith("image/") ? "🖼" : t === "application/pdf" ? "📕" : "📄";
@@ -236,7 +250,7 @@ async function viewLibrary(params) {
     ${working.length ? `<h2>In progress</h2>${working.map((i) => itemCard(i)).join("")}` : ""}
     <h2>Research threads</h2>
     ${threads.length ? threads.map(threadCard).join("") : `<div class="empty">Nothing here yet. Save a link above and it will be translated, tagged and filed into a thread automatically.</div>`}
-    ${unthreaded.length ? `<h2>Not filed yet</h2>${unthreaded.map((i) => itemCard(i)).join("")}` : ""}
+    ${unthreaded.length ? `<h2>Not filed yet</h2>${unthreaded.filter((i) => !isImage(i)).map((i) => itemCard(i)).join("")}${unthreaded.some(isImage) ? gallery(unthreaded.filter(isImage)) : ""}` : ""}
     ${items.length ? `<details style="margin-top:2rem"><summary>All sources (${items.length})</summary>${items.map((i) => itemCard(i)).join("")}</details>` : ""}
     <p class="muted small" style="margin-top:2rem"><a href="/api/export">Download everything (JSON)</a></p>`;
 
@@ -266,7 +280,7 @@ async function viewLibrary(params) {
 function threadCard(t) {
   return `<a class="card" href="#/thread/${t.id}">
     <h3>${esc(t.title)}</h3>
-    <div class="meta">${t.count} source${t.count === 1 ? "" : "s"}${t.languages.length ? ` · ${esc(t.languages.join(", "))}` : ""}${t.highlightCount ? ` · ★ ${t.highlightCount}` : ""} · ${t.finished}/${t.count} listened · last added ${formatDate(t.lastSaved.slice(0, 10))}</div>
+    <div class="meta">${t.count - t.imageCount} source${t.count - t.imageCount === 1 ? "" : "s"}${t.imageCount ? ` · ${t.imageCount} image${t.imageCount === 1 ? "" : "s"}` : ""}${t.languages.length ? ` · ${esc(t.languages.join(", "))}` : ""}${t.highlightCount ? ` · ★ ${t.highlightCount}` : ""} · ${t.finished}/${t.count - t.imageCount} listened · last added ${formatDate(t.lastSaved.slice(0, 10))}</div>
     ${t.summary ? `<p style="margin:.4rem 0 0">${esc(t.summary)}</p>` : ""}
   </a>`;
 }
@@ -283,11 +297,13 @@ async function viewThread(id) {
       <button class="small" id="addFiles">Add files</button>
       <button class="small" id="addShots">Add screenshots</button></div>
     <p>${esc(t.summary)}</p>
-    <div class="meta">${t.count} sources · ${t.finished} listened · started ${formatDate(t.createdAt.slice(0, 10))}</div>
+    <div class="meta">${t.count - t.imageCount} source${t.count - t.imageCount === 1 ? "" : "s"}${t.imageCount ? ` · ${t.imageCount} image${t.imageCount === 1 ? "" : "s"}` : ""} · ${t.finished} listened · started ${formatDate(t.createdAt.slice(0, 10))}</div>
 
     <h2>Sources</h2>
-    ${items.map((i) => itemCard(i)).join("")}
+    ${items.filter((i) => !isImage(i)).map((i) => itemCard(i)).join("") || `<p class="muted">No articles or documents yet.</p>`}
     <form id="addHere" class="row" style="margin-top:.5rem"><input type="url" name="url" placeholder="Add a link to this thread" class="grow"><button>Add</button></form>
+
+    ${items.some(isImage) ? `<h2>Images (${items.filter(isImage).length})</h2>${gallery(items.filter(isImage))}` : ""}
 
     ${highlights.length ? `<h2>Highlights</h2>${highlights.map((h) => highlightCard(h, true)).join("")}` : ""}
 
@@ -296,8 +312,8 @@ async function viewThread(id) {
 
     <h2>Citations</h2>
     <div class="card">
-      ${citations.map((c) => `<p class="citation">${chicagoCitation(c.citation)}</p>`).join("")}
-      <button id="copyCites">Copy all citations</button>
+      ${citations.map((c) => `<p class="citation">${chicagoCitation(c.citation)}</p>`).join("") || `<p class="muted">No sources to cite yet.</p>`}
+      ${citations.length ? `<button id="copyCites">Copy all citations</button>` : ""}
     </div>
 
     ${threads.length ? `<details style="margin-top:1.5rem"><summary>Merge this thread into another</summary>
@@ -320,7 +336,8 @@ async function viewThread(id) {
     clearTimeout(notesTimer);
     notesTimer = setTimeout(() => api(`/api/threads/${id}`, { method: "PATCH", body: { notes: e.target.value } }), 800);
   };
-  document.getElementById("copyCites").onclick = () =>
+  const copyBtn = document.getElementById("copyCites");
+  if (copyBtn) copyBtn.onclick = () =>
     copy(
       citations.map((c) => chicagoCitation(c.citation, { plain: true })).join("\n\n"),
       citations.map((c) => `<p>${chicagoCitation(c.citation)}</p>`).join(""),
@@ -431,7 +448,7 @@ async function viewItem(id, params) {
     <div class="card">
       <dl class="facts">
         <dt>Author</dt><dd>${esc(c.authors?.join("; ") || "—")}</dd>
-        <dt>Outlet</dt><dd>${esc(c.outlet || "—")}</dd>
+        <dt>Outlet</dt><dd>${esc(c.outlet || "—")}${c.outletEn ? ` <span class="muted">(${esc(c.outletEn)})</span>` : ""}</dd>
         <dt>Published</dt><dd>${esc(c.publishedAt ? formatDate(c.publishedAt) : "unknown")}</dd>
         <dt>Language</dt><dd>${esc(c.languageName || "—")}</dd>
         <dt>Link</dt><dd>${item.url ? `<a href="${esc(item.url)}" target="_blank" rel="noopener">${esc(item.url)}</a>` : "—"}</dd>
@@ -442,6 +459,7 @@ async function viewItem(id, params) {
       <details><summary>Fix citation details</summary>
         <form id="citeForm" style="display:grid;gap:.4rem;margin-top:.5rem">
           <label>Original title <input type="text" name="title" value="${esc(c.title)}"></label>
+          <label>Romanized title <span class="muted small">used in citations if the original isn't in Latin letters</span> <input type="text" name="titleTranslit" value="${esc(c.titleTranslit || "")}"></label>
           <label>English title <input type="text" name="titleEn" value="${esc(c.titleEn)}"></label>
           <label>Authors (separate with ;) <input type="text" name="authors" value="${esc((c.authors || []).join("; "))}"></label>
           <label>Outlet <input type="text" name="outlet" value="${esc(c.outlet)}"></label>
@@ -506,6 +524,7 @@ async function viewItem(id, params) {
         citation: {
           title: f.title.value.trim(),
           titleEn: f.titleEn.value.trim(),
+          titleTranslit: f.titleTranslit.value.trim(),
           authors: f.authors.value.split(";").map((s) => s.trim()).filter(Boolean),
           outlet: f.outlet.value.trim(),
           publishedAt: f.publishedAt.value.trim(),
@@ -584,6 +603,7 @@ function bindThreadSelect(id) {
 // Uploaded PDFs, scans, images and documents: kept as reference material,
 // with citation details, a description, tags and your own page-numbered notes.
 function viewFileItem(item, thread, threads) {
+  if (isImage(item)) return viewImageItem(item, thread, threads);
   const id = item.id;
   const c = item.citation;
   const f = item.file;
@@ -690,6 +710,71 @@ function viewFileItem(item, thread, threads) {
   };
   document.getElementById("delete").onclick = async () => {
     if (!confirm("Delete this file, its notes and screenshots?")) return;
+    await api(`/api/items/${id}`, { method: "DELETE" });
+    location.hash = thread ? `#/thread/${thread.id}` : "#/";
+  };
+  if (busy) poll(route);
+}
+
+function viewImageItem(item, thread, threads) {
+  const id = item.id;
+  const t = item.imageText;
+  const busy = !["done", "error", "needs_text"].includes(item.status);
+  view.innerHTML = `
+    <p class="small">${thread ? `<a href="#/thread/${thread.id}">← ${esc(thread.title)}</a>` : `<a href="#/">← Library</a>`}</p>
+    ${busy ? `<div class="card" style="background:var(--warn)">${STATUS_LABEL[item.status] || item.status}… ${esc(item.statusDetail || "")}</div>` : ""}
+    ${item.error ? `<div class="card" style="background:var(--warn)">${esc(item.error)}</div>` : ""}
+    <h1>${esc(itemTitle(item))}</h1>
+    <div class="row"><button class="small" id="rename">Rename</button>
+      <a href="/files/${id}/file" target="_blank" rel="noopener"><button class="small">Open full size</button></a></div>
+    <p><a href="/files/${id}/file" target="_blank"><img src="/files/${id}/file" alt="${esc(itemTitle(item))}" style="max-width:100%;max-height:70vh;border-radius:10px;border:1px solid var(--line)"></a></p>
+    ${item.summary ? `<p>${esc(item.summary)}</p>` : ""}
+    ${t?.orig ? `<h2>Text in the image</h2>
+      <div class="card">${t.en && t.en.trim() !== t.orig.trim()
+        ? `<div class="imgtext"><div class="muted">${esc(t.orig)}</div><div>${esc(t.en)}</div></div><p class="mt-note" style="margin:.6rem 0 0">English is a machine translation.</p>`
+        : `<div class="imgtext" style="grid-template-columns:1fr">${esc(t.orig)}</div>`}</div>` : ""}
+    ${threadSelect(item, threads)}
+    ${tagChips(item.tags)}
+    <div class="meta">${esc(item.file.name)}${item.file.width ? ` · ${item.file.width}×${item.file.height}` : ""} · added ${formatDate(item.savedAt.slice(0, 10))}</div>
+
+    <h2>Notes</h2>
+    <form id="noteForm" class="card" style="display:grid;gap:.5rem">
+      <input type="text" name="note" placeholder="Where it's from, why it matters…">
+      <div><button class="primary">Add</button></div>
+    </form>
+    ${item.highlights.map((h) => highlightCard(h)).join("")}
+
+    <details style="margin-top:2rem"><summary>More</summary>
+      <div class="row" style="margin-top:.5rem">
+        <button id="reprocess">Describe it again</button>
+        <button id="delete">Delete this image</button>
+      </div>
+    </details>`;
+
+  document.getElementById("rename").onclick = async () => {
+    const title = prompt("Image title", itemTitle(item));
+    if (!title?.trim()) return;
+    await api(`/api/items/${id}`, { method: "PATCH", body: { citation: { title: title.trim(), titleEn: title.trim() } } });
+    route();
+  };
+  bindThreadSelect(id);
+  bindHighlightButtons();
+  document.getElementById("noteForm").onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api(`/api/items/${id}/highlights`, { method: "POST", body: { note: e.target.note.value.trim() } });
+      route();
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+  document.getElementById("reprocess").onclick = async () => {
+    if (!confirm("Look at the image again for a title, description and text? Your title will be replaced.")) return;
+    await api(`/api/items/${id}/reprocess`, { method: "POST" });
+    route();
+  };
+  document.getElementById("delete").onclick = async () => {
+    if (!confirm("Delete this image and its notes?")) return;
     await api(`/api/items/${id}`, { method: "DELETE" });
     location.hash = thread ? `#/thread/${thread.id}` : "#/";
   };

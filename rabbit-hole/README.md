@@ -12,6 +12,10 @@ A research archive you can listen to. Save a link (in any language) and it:
 
 You can also **upload files** into a project: PDFs (papers, books, scans), photos of pages, images, Word files or EPUBs. These are kept as reference material, not translated or read aloud. Claude reads only the first few pages to fill in the citation details (author, title, publisher or journal, year, pages), a short description and tags, which costs about the same however long the book is. The file opens with one tap, gets a book- or journal-style Chicago citation, shows up in search, and can carry your own **notes and quotes with page numbers**.
 
+**Images** (photos, scans of single pages, maps) go into the project's **image folder**, a grid of thumbnails. Claude gives each one a short descriptive English title and description, and transcribes and translates any text in it (signs, captions, headlines). You can rename them. It doesn't identify people from their faces; it names someone only if a caption or the file name does.
+
+Titles, outlets and authors in non-Latin scripts (Russian, Kazakh, Arabic…) are **romanized in citations**, as Chicago style requires, with the English translation in brackets. The original script is kept and shown in the app.
+
 You can also add **screenshots** of passages you liked. Claude reads the text in the screenshot, works out which saved article and paragraph it came from, and adds a highlight with the screenshot attached. **Search** works by meaning, in English, across every language you've saved. Every source has a **Chicago-style citation** ready to copy.
 
 ## Saving things

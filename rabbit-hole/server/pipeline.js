@@ -4,7 +4,8 @@
 
 import * as store from "./store.js";
 import { fetchPage, extractArticle, paragraphsFromText, FetchError } from "./extract.js";
-import { analyzeArticle, translateAndPrepare, assignThread, catalogFile } from "./claude.js";
+import { analyzeArticle, translateAndPrepare, assignThread, catalogFile, describeImage } from "./claude.js";
+import sharp from "sharp";
 import { PDFDocument } from "pdf-lib";
 import { archiveUrl } from "./wayback.js";
 import { matchSelection } from "./match.js";
@@ -98,9 +99,12 @@ async function processItem(id) {
     citation: {
       ...it.citation,
       title: a.title || metaHints.title || it.citation.title,
+      titleTranslit: a.titleTranslit || "",
       titleEn: a.titleEn || a.title || "",
       authors: a.authors?.length ? a.authors : metaHints.authors || [],
       outlet: a.outlet || metaHints.outlet || "",
+      outletTranslit: a.outletTranslit || "",
+      outletEn: a.outletEn || "",
       publishedAt: a.publishedAt || "",
       language: a.language || "",
       languageName: a.languageName || "",
@@ -222,6 +226,7 @@ async function processFile(id) {
   const item = store.getItem(id);
   const f = item.file;
   const bytes = fs.readFileSync(path.join(store.itemDir(id), "file", f.name));
+  if (f.mediaType.startsWith("image/")) return processImage(id, bytes);
   setStatus(id, "analyzing", "Reading the first pages for citation details");
 
   let input = null;
@@ -249,6 +254,7 @@ async function processFile(id) {
           ...it.citation,
           type: a.type || "other",
           title: a.title || it.citation.title,
+          titleTranslit: a.titleTranslit || "",
           titleEn: a.titleEn || a.title || it.citation.titleEn,
           authors: a.authors || [],
           editors: a.editors || [],
@@ -272,6 +278,44 @@ async function processFile(id) {
   }
 
   store.updateItem(id, (it) => ({ file: { ...it.file, pages }, error: problem }));
+  if (!store.getItem(id).threadId) {
+    setStatus(id, "filing", "Filing into a research thread");
+    await fileIntoThread(id);
+  }
+  store.updateItem(id, { status: "done", statusDetail: "", error: problem });
+}
+
+// Images go in the project's image folder: a descriptive title, a short
+// description, and any text in the image transcribed and translated.
+async function processImage(id, bytes) {
+  const item = store.getItem(id);
+  setStatus(id, "analyzing", "Looking at the image");
+  let problem = "";
+  let forClaude = null;
+  try {
+    const img = sharp(bytes, { failOn: "none" }).rotate(); // respect phone camera orientation
+    const meta = await img.metadata();
+    store.writeItemFile(id, "thumb.webp", await img.clone().resize({ width: 480, height: 480, fit: "inside", withoutEnlargement: true }).webp({ quality: 78 }).toBuffer());
+    forClaude = await img.clone().resize({ width: 1568, height: 1568, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
+    store.updateItem(id, (it) => ({ file: { ...it.file, width: meta.width, height: meta.height } }));
+  } catch (e) {
+    problem = `Couldn't open this image (${e.message}). It's stored; give it a title yourself.`;
+  }
+  if (forClaude) {
+    try {
+      const a = await describeImage({ base64: forClaude.toString("base64"), mediaType: "image/jpeg", fileName: item.file.name, vocabulary: tagVocabulary() });
+      store.updateItem(id, (it) => ({
+        citation: { ...it.citation, type: "image", title: a.title || it.citation.title, titleEn: a.title || it.citation.titleEn, titleTranslit: "" },
+        summary: a.description || "",
+        imageKind: a.kind || "other",
+        imageText: a.text ? { orig: a.text, language: a.textLanguage || "", en: a.textEn || "" } : null,
+        tags: a.tags || it.tags,
+      }));
+    } catch (e) {
+      problem = `Couldn't describe the image automatically (${e.message}). Give it a title yourself.`;
+    }
+  }
+  store.updateItem(id, (it) => ({ citation: { ...it.citation, type: "image" } }));
   if (!store.getItem(id).threadId) {
     setStatus(id, "filing", "Filing into a research thread");
     await fileIntoThread(id);

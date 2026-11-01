@@ -66,9 +66,12 @@ const ANALYZE_SCHEMA = obj({
   language: str,
   languageName: str,
   title: str,
+  titleTranslit: str,
   titleEn: str,
   authors: strArr,
   outlet: str,
+  outletTranslit: str,
+  outletEn: str,
   publishedAt: str,
   summary: str,
   tags: obj({ people: strArr, places: strArr, organizations: strArr, topics: strArr }),
@@ -79,8 +82,9 @@ const ANALYZE_SYSTEM = `You catalog sources for a journalist's long-term researc
 Rules:
 - language: BCP-47 code of the article body (e.g. "ru", "de", "pl", "en"). languageName: its English name.
 - title: the headline exactly as published, in the original language and script. titleEn: an English translation of the headline (identical to title if the article is in English).
+- titleTranslit: if the title is in a non-Latin script (Cyrillic, Arabic, Greek, etc.), its romanization using the Library of Congress system, as Chicago style requires in English-language citations (e.g. "Episkop Afanasii Shnaider: «Propoved' ne prekrashchaetsia iz-za zakonov»"). Empty string if the title is already in Latin script.
 - authors: bylined author names. If the name is in a non-Latin script, transliterate it to Latin script. Empty array if there is no byline; do not invent one. Do not list the outlet as an author.
-- outlet: the publication's name as it styles itself.
+- outlet: the publication's name as it styles itself. outletTranslit: its romanization if in a non-Latin script, else "". outletEn: an English translation of the outlet's name if it isn't already English (e.g. "Catholic Herald"), else "".
 - publishedAt: publication date as YYYY-MM-DD, or YYYY-MM or YYYY if that is all that's known. Empty string if the date is not stated; never guess.
 - summary: 2–4 plain English sentences on what the piece says and who says it. Neutral, specific, no hype.
 - tags.people: full names in their usual English spelling, with no titles (e.g. "Athanasius Schneider", not "Bishop Schneider").
@@ -189,7 +193,8 @@ const THREAD_SYSTEM = `You file sources into research threads for a journalist. 
 Given a newly saved source and the existing threads:
 - If the source clearly belongs to the same research question as an existing thread, action "join", give that threadId, keep its title (lightly sharpen only if the new source makes it clearly more precise), and write an updated 2–3 sentence summary of what the thread's sources collectively cover.
 - Otherwise action "new", threadId "", a specific title of at most 10 words naming the people/places/question involved, and a 1–2 sentence summary.
-Prefer joining when the overlap is real; prefer a new thread when the only overlap is a broad theme.`;
+Prefer joining when the overlap is real; prefer a new thread when the only overlap is a broad theme. If the new source is an image, join the most plausibly related thread rather than starting a new one, unless nothing is related.
+Always write the title and summary in English, whatever language the sources are in.`;
 
 export async function assignThread({ item, threads }) {
   if (DEMO) return demo.assignThread({ item, threads });
@@ -241,6 +246,7 @@ const FILE_SCHEMA = obj({
   language: str,
   languageName: str,
   title: str,
+  titleTranslit: str,
   titleEn: str,
   authors: strArr,
   editors: strArr,
@@ -262,7 +268,8 @@ Rules:
 - type: "book" for a whole book, "journal" for a journal or magazine article, "chapter" for a chapter in an edited volume, "report" for reports, theses and official documents, "web" for a printout of a web page, "other" otherwise.
 - Take bibliographic details from the title page, copyright page, running heads or first page. Never guess: use "" or [] for anything not shown.
 - title: exactly as printed, original language and script. titleEn: English translation (identical if already English). For a chapter, bookTitle is the volume it appears in.
-- authors and editors: as printed; transliterate non-Latin scripts to Latin script.
+- titleTranslit: if the title is in a non-Latin script, its Library of Congress romanization (as Chicago style requires in English-language citations); otherwise "".
+- authors, editors, publisher, place and journal: in Latin script; romanize (Library of Congress system) anything printed in a non-Latin script.
 - publishedAt: year (or YYYY-MM-DD if a full date is printed). place: city of publication. pages: page range for an article or chapter, if printed.
 - summary: 1–3 plain English sentences saying what this work is about, based on what you can see (contents pages, abstract, introduction). Say "Based on the opening pages" if you are inferring scope.
 - tags.people: usual English spelling, no titles. tags.topics: 3–6 short lowercase noun phrases; reuse the archive's existing tags when one fits.`;
@@ -287,6 +294,39 @@ export async function catalogFile({ base64, mediaType, fileName, pageCount, voca
   });
 }
 
+// ---------------------------------------------------------------- images
+
+const IMAGE_SCHEMA = obj({
+  kind: { type: "string", enum: ["photo", "document", "screenshot", "map", "artwork", "chart", "other"] },
+  title: str,
+  description: str,
+  text: str,
+  textLanguage: str,
+  textEn: str,
+  tags: obj({ people: strArr, places: strArr, organizations: strArr, topics: strArr }),
+});
+
+const IMAGE_SYSTEM = `You file images into a journalist's research archive so they can be found later. For each image:
+- kind: what it is.
+- title: a short, specific English title, at most 10 words, like a caption a librarian would write (e.g. "Cathedral of Our Lady of Fatima, Karaganda, exterior" or "Kazakh newspaper page on the 2011 religion law").
+- description: 1–2 plain English sentences on what the image shows and anything a researcher would want noted.
+- text: any readable text in the image (signs, captions, headlines, page text), transcribed exactly in its original language and script, preserving line breaks. "" if none. textLanguage: BCP-47 code of that text, or "". textEn: faithful English translation of the text ("" if none; identical if already English).
+- tags: as for other sources. tags.topics: 2–5 short lowercase noun phrases; reuse the archive's existing tags when one fits.
+Never identify a person from their face or appearance. Name a person only if the name is written in the image (for example a caption) or the file name gives it.`;
+
+export async function describeImage({ base64, mediaType, fileName, vocabulary }) {
+  if (DEMO) return demo.describeImage({ fileName });
+  return callJSON({
+    system: IMAGE_SYSTEM,
+    content: [
+      { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+      { type: "text", text: `File name: ${fileName}\nExisting tag vocabulary in the archive: ${vocabulary.length ? vocabulary.join(", ") : "(none yet)"}` },
+    ],
+    schema: IMAGE_SCHEMA,
+    effort: "low",
+  });
+}
+
 // ---------------------------------------------------------------- demo mode
 
 const demo = {
@@ -305,6 +345,9 @@ const demo = {
       language: lang,
       languageName: names[lang] || lang,
       title: metaHints.title || paragraphs[0]?.slice(0, 80) || "Untitled",
+      titleTranslit: "",
+      outletTranslit: "",
+      outletEn: "",
       titleEn: lang === "en" ? metaHints.title || "" : `[demo] ${metaHints.title || "Untitled"}`,
       authors: metaHints.authors || [],
       outlet: metaHints.outlet || host,
@@ -327,12 +370,22 @@ const demo = {
   readScreenshot() {
     return { text: "", language: "", english: "", demo: true };
   },
+  describeImage({ fileName }) {
+    const base = fileName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
+    return {
+      kind: "photo",
+      title: `[demo] ${base}`,
+      description: "[Demo mode: no API key, so the image wasn't looked at.]",
+      text: "", textLanguage: "", textEn: "",
+      tags: { people: [], places: [], organizations: [], topics: ["demo"] },
+    };
+  },
   catalogFile({ fileName }) {
     const base = fileName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
     return {
       type: /\.pdf$/i.test(fileName) ? "book" : "other",
       language: "en", languageName: "English",
-      title: base, titleEn: base, authors: [], editors: [], publisher: "", place: "", journal: "", bookTitle: "",
+      title: base, titleTranslit: "", titleEn: base, authors: [], editors: [], publisher: "", place: "", journal: "", bookTitle: "",
       volume: "", issue: "", pages: "", publishedAt: "",
       summary: "[Demo mode: no API key, so the file wasn't read.]",
       tags: { people: [], places: [], organizations: [], topics: ["demo"] },

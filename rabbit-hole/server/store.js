@@ -207,6 +207,10 @@ function itemMarkdown(item) {
   if (tags.length) lines.push(`- Tags: ${tags.join(", ")}`);
   lines.push("");
   if (item.summary) lines.push("## Summary", "", item.summary, "");
+  if (item.imageText?.orig) {
+    lines.push("## Text in the image", "", item.imageText.orig, "");
+    if (item.imageText.en && item.imageText.en !== item.imageText.orig) lines.push("_EN (machine translation):_", "", item.imageText.en, "");
+  }
   if (item.highlights?.length) {
     lines.push("## Highlights", "");
     for (const h of item.highlights) {

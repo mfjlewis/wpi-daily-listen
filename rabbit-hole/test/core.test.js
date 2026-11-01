@@ -137,3 +137,20 @@ test("Chicago citations for books, journal articles and chapters", () => {
   const ch = { type: "chapter", title: "Syriac Scholars", authors: ["Ann Lee"], bookTitle: "Faith and Empire", editors: ["Tom Ray"], pages: "45–67", publisher: "Brill", place: "Leiden", publishedAt: "2019" };
   assert.equal(chicagoCitation(ch, { plain: true }), "Lee, Ann. “Syriac Scholars.” In Faith and Empire, edited by Tom Ray, 45–67. Leiden: Brill, 2019.");
 });
+
+test("Cyrillic titles and outlets are romanized in citations", () => {
+  const c = {
+    title: "Епископ Афанасий Шнайдер о проповеди",
+    titleTranslit: "Episkop Afanasii Shnaider o propovedi",
+    titleEn: "Bishop Athanasius Schneider on Preaching",
+    authors: ["Mariia Ivanova"],
+    outlet: "Католический вестник",
+    outletTranslit: "Katolicheskii vestnik",
+    publishedAt: "2019-03-14",
+    url: "https://example.org/a",
+  };
+  assert.equal(
+    chicagoCitation(c, { plain: true }),
+    "Ivanova, Mariia. “Episkop Afanasii Shnaider o propovedi” [Bishop Athanasius Schneider on Preaching]. Katolicheskii vestnik, March 14, 2019. https://example.org/a.",
+  );
+});

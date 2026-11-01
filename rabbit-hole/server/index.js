@@ -72,6 +72,7 @@ function threadSummary(t) {
   return {
     ...t,
     count: members.length,
+    imageCount: members.filter((i) => i.kind === "file" && (i.file?.mediaType || "").startsWith("image/")).length,
     highlightCount: members.reduce((n, i) => n + i.highlights.length, 0),
     lastSaved: members.reduce((m, i) => (i.savedAt > m ? i.savedAt : m), ""),
     languages: [...new Set(members.map((i) => i.citation.languageName).filter(Boolean))],
@@ -175,7 +176,7 @@ app.patch("/api/items/:id", async (req, res) => {
   const b = req.body || {};
   const oldThread = item.threadId;
   if (b.citation) {
-    const allowed = ["type", "title", "titleEn", "authors", "editors", "outlet", "publisher", "place", "journal", "bookTitle", "volume", "issue", "pages", "publishedAt", "url", "archiveUrl"];
+    const allowed = ["type", "title", "titleTranslit", "outletTranslit", "outletEn", "titleEn", "authors", "editors", "outlet", "publisher", "place", "journal", "bookTitle", "volume", "issue", "pages", "publishedAt", "url", "archiveUrl"];
     for (const k of allowed) if (k in b.citation) item.citation[k] = b.citation[k];
   }
   if (b.tags) item.tags = { ...item.tags, ...b.tags };
@@ -263,6 +264,14 @@ app.post("/api/upload", express.raw({ type: () => true, limit: MAX_UPLOAD }), (r
   if (threadId && store.getThread(threadId)) store.updateItem(item.id, { threadId });
   enqueue(item.id);
   res.status(201).json({ item: light(store.getItem(item.id)) });
+});
+
+app.get("/files/:id/thumb", (req, res) => {
+  const item = store.getItem(req.params.id);
+  const f = item && path.join(store.itemDir(item.id), "thumb.webp");
+  if (!f || !fs.existsSync(f)) return res.status(404).end();
+  res.setHeader("Cache-Control", "private, max-age=86400");
+  res.sendFile(f);
 });
 
 app.get("/files/:id/file", (req, res) => {
@@ -394,7 +403,7 @@ app.get("/api/threads/:id", (req, res) => {
     thread: threadSummary(t),
     items: members.map(light),
     highlights: members.flatMap((i) => i.highlights.map((h) => ({ ...h, itemId: i.id, itemTitle: i.citation.titleEn || i.citation.title }))),
-    citations: members.map((i) => ({ id: i.id, citation: i.citation })),
+    citations: members.filter((i) => i.citation.type !== "image").map((i) => ({ id: i.id, citation: i.citation })),
     threads: store.listThreads().filter((x) => x.id !== t.id).map((x) => ({ id: x.id, title: x.title })),
   });
 });
@@ -443,6 +452,7 @@ app.get("/api/search", async (req, res) => {
     summary: i.summary,
     tags: Object.values(i.tags).flat(),
     highlights: i.highlights.map((h) => h.note).filter(Boolean),
+    ...(i.imageText ? { textInImage: i.imageText.en || i.imageText.orig } : {}),
   }));
   try {
     const r = catalog.length ? await searchArchive({ query: q, catalog }) : { results: [] };
