@@ -7,6 +7,8 @@ Everything runs in the browser and documents are stored only on the device.
 - Read mode: fonts (Serif, Sans, Book, Clear, Mono), text size, line spacing, margins, left/justified text
 - Themes: Auto, Light, Sepia, Gray, Dark, Black, or any custom background color
 - Find in document, with match count and next/previous
+- Listen: reads the document aloud with the phone's voices, highlighting each paragraph; play/pause, skip, speed (0.75×–2×), voice choice, or select text → **Listen from here**
+- YAML front matter (`---` header block) is shown as a collapsible "Document info" box and left out of exports
 - Highlighter in four colors: select text and tap **Highlight**, tap a highlight to remove it.
   Highlights are saved in the Markdown (`==text==` or `<mark class="hl-green">…</mark>`), so they carry into exports
 - Edit mode with a formatting toolbar; autosaves
