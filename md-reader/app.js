@@ -555,9 +555,67 @@ const FONT_STACKS = {
   book: '"Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif', readable: 'Verdana,Tahoma,sans-serif', mono: 'ui-monospace,Menlo,Consolas,monospace',
 };
 function escHtml(s) { return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+/* Exported HTML is self-contained and adjustable: A−/A+ re-flow the text to fit the screen
+   (pinch-zoom only magnifies), plus theme and font toggles. Choices are remembered per file. */
 function exportHtmlString(d) {
   const body = mdToHtml(splitFM(d.content).body).replace(/<input /g, '<input disabled ');
-  return `<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${escHtml(d.title)}</title>\n<style>${EXPORT_CSS.replace('FONTSTACK', FONT_STACKS[settings.font] || FONT_STACKS.serif)}</style>\n</head>\n<body>\n<article class="doc">\n${body}\n</article>\n</body>\n</html>\n`;
+  const fonts = [settings.font, 'serif', 'sans', 'book'].filter((f, i, a) => FONT_STACKS[f] && a.indexOf(f) === i);
+  const css = `
+:root{--bg:#fff;--fg:#1d1d1f;--mut:#5a5a60;--line:#d9d9de;--code:#f1f1f3;--link:#2f5bd3;--fs:18px;--font:${FONT_STACKS[fonts[0]]};color-scheme:light}
+:root[data-t=sepia]{--bg:#f4ecd8;--fg:#4a3b2a;--mut:#7d6a52;--line:#dccfb1;--code:#ebe0c6;--link:#9a5b13}
+:root[data-t=dark]{--bg:#1c1c1e;--fg:#e4e4e6;--mut:#a0a0a6;--line:#3a3a3e;--code:#2a2a2d;--link:#86a8ff;color-scheme:dark}
+@media (prefers-color-scheme:dark){:root:not([data-t]){--bg:#1c1c1e;--fg:#e4e4e6;--mut:#a0a0a6;--line:#3a3a3e;--code:#2a2a2d;--link:#86a8ff;color-scheme:dark}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg)}
+.doc{max-width:42rem;margin:0 auto;padding:1.5rem 16px 6rem;font-family:var(--font);font-size:var(--fs);line-height:1.6;overflow-wrap:break-word;word-wrap:break-word;hyphens:auto;-webkit-hyphens:auto}
+.doc h1,.doc h2,.doc h3,.doc h4{line-height:1.25;margin:1.4em 0 .5em}.doc h1{font-size:1.75em;margin-top:.4em}.doc h2{font-size:1.4em}.doc h3{font-size:1.2em}
+.doc p,.doc ul,.doc ol,.doc blockquote,.doc pre,.doc table{margin:0 0 1em}.doc ul,.doc ol{padding-left:1.4em}.doc li{margin:.25em 0}
+.doc li:has(>input[type=checkbox]){list-style:none;margin-left:-1.3em}
+.doc a{color:var(--link)}.doc img{max-width:100%;height:auto}
+.doc blockquote{margin-left:0;padding-left:1em;border-left:4px solid var(--line);color:var(--mut)}
+.doc hr{border:0;border-top:1px solid var(--line);margin:2em 0}
+.doc code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.86em;background:var(--code);padding:.1em .3em;border-radius:4px}
+.doc pre{background:var(--code);padding:.8em 1em;border-radius:8px;white-space:pre-wrap}.doc pre code{background:none;padding:0}
+.doc table{border-collapse:collapse;display:block;max-width:100%;overflow-x:auto}.doc th,.doc td{border:1px solid var(--line);padding:.35em .6em}.doc th{background:var(--code)}
+.doc mark{background:#ffe36e;color:#1d1d1f;padding:0 .08em;border-radius:2px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.doc mark.hl-green{background:#b6f0a8}.doc mark.hl-pink{background:#ffc2dc}.doc mark.hl-blue{background:#b9dcff}
+.rt{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--bg);border:1px solid var(--line);box-shadow:0 4px 16px rgba(0,0,0,.18);font:600 15px system-ui,-apple-system,Roboto,sans-serif}
+.rt button{min-width:44px;height:44px;padding:0 8px;border:0;border-radius:10px;background:transparent;color:var(--fg);font:inherit;cursor:pointer}
+.rt button:active{background:var(--line)}
+.rt .sz{font-size:13px;color:var(--mut);align-self:center;min-width:3.2em;text-align:center}
+@media print{.rt{display:none}:root{--bg:#fff;--fg:#000;--mut:#444;--link:#000}.doc{max-width:none;padding:0;font-size:12pt}}`;
+  const js = `(function(){
+var r=document.documentElement,K='md-export:'+document.title,F=${JSON.stringify(fonts.map(f => [f[0].toUpperCase() + f.slice(1), FONT_STACKS[f]]))},T=['','light','sepia','dark'],TL={'':'Auto',light:'Light',sepia:'Sepia',dark:'Dark'};
+var s={fs:18,t:'',f:0};try{var v=JSON.parse(localStorage.getItem(K));if(v)s=v}catch(e){}
+function q(id){return document.getElementById(id)}
+function apply(){r.style.setProperty('--fs',s.fs+'px');if(s.t)r.setAttribute('data-t',s.t);else r.removeAttribute('data-t');
+r.style.setProperty('--font',F[s.f%F.length][1]);q('rt-t').textContent=TL[s.t];q('rt-f').textContent=F[s.f%F.length][0];q('rt-s').textContent=s.fs+'px';
+try{localStorage.setItem(K,JSON.stringify(s))}catch(e){}}
+function size(d){var y=scrollY/Math.max(1,document.documentElement.scrollHeight-innerHeight);s.fs=Math.max(12,Math.min(44,s.fs+d));apply();scrollTo(0,y*(document.documentElement.scrollHeight-innerHeight))}
+q('rt-m').onclick=function(){size(-2)};q('rt-p').onclick=function(){size(2)};
+q('rt-t').onclick=function(){s.t=T[(T.indexOf(s.t)+1)%T.length];apply()};
+q('rt-f').onclick=function(){s.f=(s.f+1)%F.length;apply()};
+apply();})();`;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escHtml(d.title)}</title>
+<style>${css}</style>
+</head>
+<body>
+<article class="doc">
+${body}
+</article>
+<div class="rt" role="toolbar" aria-label="Text settings">
+<button id="rt-m" aria-label="Smaller text">A&minus;</button><span class="sz" id="rt-s"></span><button id="rt-p" aria-label="Larger text" style="font-size:19px">A+</button><button id="rt-f" aria-label="Change font"></button><button id="rt-t" aria-label="Change theme"></button>
+</div>
+<script>${js}</script>
+</body>
+</html>
+`;
 }
 
 async function exportPdf(d) {

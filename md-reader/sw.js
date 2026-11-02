@@ -1,5 +1,5 @@
 /* MD Reader service worker: offline cache + Android "share to" target. */
-const VERSION = 'mdr-v2';
+const VERSION = 'mdr-v3';
 const ASSETS = [
   './', './index.html', './app.css', './app.js', './manifest.webmanifest',
   './vendor/marked.min.js', './vendor/purify.min.js', './vendor/docx.min.js', './vendor/html2pdf.bundle.min.js',
