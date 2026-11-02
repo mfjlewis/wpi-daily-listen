@@ -21,6 +21,9 @@
     <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
   </button>
   <div class="title" id="docTitle" title="Tap to rename">Untitled</div>
+  <button class="ib" id="btnListen" aria-label="Listen (read aloud)" title="Listen">
+    <svg viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4.5" height="6.5" rx="1.5"/><rect x="16.5" y="14" width="4.5" height="6.5" rx="1.5"/></svg>
+  </button>
   <button class="ib" id="btnFind" aria-label="Find in document" title="Find">
     <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>
   </button>
@@ -35,10 +38,12 @@
 
 <div class="findbar" id="findbar" hidden>
   <input id="findInput" type="search" placeholder="Find in document" autocomplete="off" enterkeyhint="search">
+  <div class="findctl">
   <span class="findcount" id="findCount"></span>
   <button class="ib sm" id="findPrev" aria-label="Previous match"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
   <button class="ib sm" id="findNext" aria-label="Next match"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
   <button class="ib sm" id="findClose" aria-label="Close find"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
 </div>
 
 <main id="main">
@@ -67,7 +72,18 @@
 <!-- floating highlight popup -->
 <div class="hlpop" id="hlpop" hidden>
   <button id="hlAdd">Highlight</button>
+  <button id="hlListen">Listen from here</button>
   <button id="hlRemove" hidden>Remove highlight</button>
+</div>
+
+<!-- read-aloud player -->
+<div class="player" id="player" hidden>
+  <button class="ib" id="ttsPrev" aria-label="Previous paragraph"><svg viewBox="0 0 24 24"><path d="M6 5v14M19 5l-9 7 9 7z"/></svg></button>
+  <button class="ib play" id="ttsPlay" aria-label="Play"><svg viewBox="0 0 24 24" id="ttsPlayIcon"><path d="M7 4l13 8-13 8z"/></svg></button>
+  <button class="ib" id="ttsNext" aria-label="Next paragraph"><svg viewBox="0 0 24 24"><path d="M18 5v14M5 5l9 7-9 7z"/></svg></button>
+  <button class="rate" id="ttsRate" aria-label="Reading speed">1×</button>
+  <span class="ttspos" id="ttsPos"></span>
+  <button class="ib sm" id="ttsClose" aria-label="Stop listening"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
 </div>
 
 <div class="scrim" id="scrim" hidden></div>
@@ -154,6 +170,11 @@
       <button data-hl="blue" aria-label="Blue"></button>
     </div>
     <button class="link" id="clearHl">Clear all highlights</button>
+  </div>
+  <div class="row">
+    <span class="lbl">Listen (read aloud)</span>
+    <select id="ttsVoice" aria-label="Voice"></select>
+    <button class="link" id="ttsTest">Test voice</button>
   </div>
   <div class="row">
     <label class="check"><input type="checkbox" id="wakeLock"> Keep screen on while reading</label>

@@ -1,5 +1,5 @@
 /* MD Reader service worker: offline cache + Android "share to" target. */
-const VERSION = 'mdr-v1';
+const VERSION = 'mdr-v2';
 const ASSETS = [
   './', './index.html', './app.css', './app.js', './manifest.webmanifest',
   './vendor/marked.min.js', './vendor/purify.min.js', './vendor/docx.min.js', './vendor/html2pdf.bundle.min.js',
@@ -7,7 +7,7 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
