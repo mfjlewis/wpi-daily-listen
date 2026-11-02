@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MD Reader</title>
+<meta name="description" content="Read, edit, highlight and export Markdown files as Word, HTML or PDF.">
+<meta name="theme-color" content="#1f2a44">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MD Reader">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="bar" id="topbar">
+  <button class="ib" id="btnDocs" aria-label="Documents" title="Documents">
+    <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+  </button>
+  <div class="title" id="docTitle" title="Tap to rename">Untitled</div>
+  <button class="ib" id="btnFind" aria-label="Find in document" title="Find">
+    <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>
+  </button>
+  <button class="ib" id="btnSettings" aria-label="Reading settings" title="Reading settings">
+    <svg viewBox="0 0 24 24"><path d="M3 19 8.5 5h1L15 19M5 14h8" /><path d="M15.5 19l3-8 3 8M16.5 16.5h4"/></svg>
+  </button>
+  <button class="ib" id="btnExport" aria-label="Export" title="Export">
+    <svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 17v3h16v-3"/></svg>
+  </button>
+  <button class="mode" id="btnMode" aria-label="Switch between reading and editing">Edit</button>
+</header>
+
+<div class="findbar" id="findbar" hidden>
+  <input id="findInput" type="search" placeholder="Find in document" autocomplete="off" enterkeyhint="search">
+  <span class="findcount" id="findCount"></span>
+  <button class="ib sm" id="findPrev" aria-label="Previous match"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
+  <button class="ib sm" id="findNext" aria-label="Next match"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+  <button class="ib sm" id="findClose" aria-label="Close find"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+</div>
+
+<main id="main">
+  <section id="readView">
+    <article class="doc" id="article"></article>
+    <p class="stats" id="stats"></p>
+  </section>
+  <section id="editView" hidden>
+    <div class="edtools" id="edtools">
+      <button data-cmd="bold" title="Bold"><b>B</b></button>
+      <button data-cmd="italic" title="Italic"><i>I</i></button>
+      <button data-cmd="heading" title="Heading">H</button>
+      <button data-cmd="mark" title="Highlight"><span class="hlbtn">ab</span></button>
+      <button data-cmd="ul" title="Bullet list">•&#8202;—</button>
+      <button data-cmd="ol" title="Numbered list">1.</button>
+      <button data-cmd="task" title="Checklist">☐</button>
+      <button data-cmd="quote" title="Quote">❝</button>
+      <button data-cmd="link" title="Link">🔗</button>
+      <button data-cmd="code" title="Code">&lt;/&gt;</button>
+      <button data-cmd="hr" title="Divider">―</button>
+    </div>
+    <textarea id="editor" spellcheck="true" autocapitalize="sentences" placeholder="Write Markdown here…"></textarea>
+  </section>
+</main>
+
+<!-- floating highlight popup -->
+<div class="hlpop" id="hlpop" hidden>
+  <button id="hlAdd">Highlight</button>
+  <button id="hlRemove" hidden>Remove highlight</button>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<!-- Documents drawer -->
+<aside class="drawer" id="drawer" aria-label="Documents" hidden>
+  <div class="drawer-head">
+    <h2>Documents</h2>
+    <button class="ib sm" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+  <div class="drawer-actions">
+    <button class="btn" id="btnOpen">Open file…</button>
+    <button class="btn" id="btnNew">New</button>
+    <button class="btn" id="btnPaste">Paste</button>
+  </div>
+  <input type="file" id="fileInput" hidden>
+  <ul class="doclist" id="docList"></ul>
+  <p class="hint" id="installHint"></p>
+</aside>
+
+<!-- Reading settings sheet -->
+<div class="sheet" id="settingsSheet" role="dialog" aria-label="Reading settings" hidden>
+  <div class="grab"></div>
+  <div class="sheet-head"><h3>Reading settings</h3><button class="done" data-close>Done</button></div>
+  <div class="row">
+    <span class="lbl">Theme</span>
+    <div class="swatches" id="themeSwatches">
+      <button data-theme="auto" title="Match phone">Auto</button>
+      <button data-theme="light" title="Light">Light</button>
+      <button data-theme="sepia" title="Sepia">Sepia</button>
+      <button data-theme="gray" title="Gray">Gray</button>
+      <button data-theme="dark" title="Dark">Dark</button>
+      <button data-theme="black" title="Black">Black</button>
+    </div>
+  </div>
+  <div class="row">
+    <span class="lbl">Custom background</span>
+    <input type="color" id="customBg" value="#fdf6e3">
+    <button class="link" id="clearBg">Reset</button>
+  </div>
+  <div class="row">
+    <span class="lbl">Font</span>
+    <div class="seg" id="fontSeg">
+      <button data-font="serif" style="font-family:var(--f-serif)">Serif</button>
+      <button data-font="sans" style="font-family:var(--f-sans)">Sans</button>
+      <button data-font="book" style="font-family:var(--f-book)">Book</button>
+      <button data-font="readable" style="font-family:var(--f-readable)">Clear</button>
+      <button data-font="mono" style="font-family:var(--f-mono)">Mono</button>
+    </div>
+  </div>
+  <div class="row">
+    <span class="lbl">Size</span>
+    <button class="step" id="sizeDown" aria-label="Smaller text">A−</button>
+    <input type="range" id="sizeRange" min="13" max="32" step="1">
+    <button class="step big" id="sizeUp" aria-label="Larger text">A+</button>
+    <span class="val" id="sizeVal"></span>
+  </div>
+  <div class="row">
+    <span class="lbl">Line spacing</span>
+    <input type="range" id="lhRange" min="1.2" max="2.2" step="0.1">
+    <span class="val" id="lhVal"></span>
+  </div>
+  <div class="row">
+    <span class="lbl">Margins</span>
+    <div class="seg" id="widthSeg">
+      <button data-width="narrow">Narrow</button>
+      <button data-width="medium">Medium</button>
+      <button data-width="wide">Wide</button>
+    </div>
+  </div>
+  <div class="row">
+    <span class="lbl">Alignment</span>
+    <div class="seg" id="alignSeg">
+      <button data-align="left">Left</button>
+      <button data-align="justify">Justify</button>
+    </div>
+  </div>
+  <div class="row">
+    <span class="lbl">Highlighter</span>
+    <div class="hlcolors" id="hlColors">
+      <button data-hl="yellow" aria-label="Yellow"></button>
+      <button data-hl="green" aria-label="Green"></button>
+      <button data-hl="pink" aria-label="Pink"></button>
+      <button data-hl="blue" aria-label="Blue"></button>
+    </div>
+    <button class="link" id="clearHl">Clear all highlights</button>
+  </div>
+  <div class="row">
+    <label class="check"><input type="checkbox" id="wakeLock"> Keep screen on while reading</label>
+  </div>
+</div>
+
+<!-- Export sheet -->
+<div class="sheet" id="exportSheet" role="dialog" aria-label="Export" hidden>
+  <div class="grab"></div>
+  <div class="sheet-head"><h3>Export “<span id="exportName"></span>”</h3><button class="done" data-close>Close</button></div>
+  <div class="exgrid">
+    <button class="ex" data-ex="docx"><b>Word</b><small>.docx</small></button>
+    <button class="ex" data-ex="pdf"><b>PDF</b><small>.pdf</small></button>
+    <button class="ex" data-ex="html"><b>Web page</b><small>.html</small></button>
+    <button class="ex" data-ex="md"><b>Markdown</b><small>.md</small></button>
+  </div>
+  <button class="btn wide" id="btnPrint">Print / Save as PDF via print dialog</button>
+  <label class="check" id="shareRow" hidden><input type="checkbox" id="useShare"> Send through the share sheet (Files, Drive, email…) instead of downloading</label>
+  <p class="hint">Exports use a clean light layout. Highlights are kept. The direct PDF is an image of each page; for selectable text use the print dialog.</p>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
