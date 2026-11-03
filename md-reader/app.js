@@ -312,7 +312,7 @@ addEventListener('dragover', e => e.preventDefault());
 addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) importFile(f); });
 
 /* ---------------- settings & export sheets ---------------- */
-$('#btnSettings').addEventListener('click', () => openPanel($('#settingsSheet')));
+$('#btnSettings').addEventListener('click', () => { if (typeof fillVoices === 'function') fillVoices(); openPanel($('#settingsSheet')); });
 $('#btnExport').addEventListener('click', () => {
   $('#exportName').textContent = cur().title;
   const canShare = !!(navigator.canShare && navigator.canShare({ files: [new File(['x'], 'x.md', { type: 'text/markdown' })] }));
@@ -510,7 +510,7 @@ editor.addEventListener('keydown', e => {
 });
 
 /* ---------------- export ---------------- */
-function safeName(t) { return (t || 'document').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'document'; }
+function safeName(t) { return (t || 'document').replace(/[\\/:*?"<>|]+/g, '').replace(/[. ]+$/, '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'document'; }
 const loaded = {};
 function loadScript(src) {
   return loaded[src] || (loaded[src] = new Promise((res, rej) => {
@@ -793,6 +793,47 @@ $('#exportSheet').addEventListener('click', async e => {
     console.error(err); toast('Export failed: ' + (err.message || err));
   } finally { b.disabled = false; b.innerHTML = old; }
 });
+/* Send to Speechify (or any reading app): share a plain-text copy through the phone's share menu.
+   Markdown symbols are removed so they aren't read aloud. */
+function plainTextFor(d) {
+  const host = document.createElement('div');
+  host.innerHTML = mdToHtml(splitFM(d.content).body);
+  const out = [];
+  host.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,pre,blockquote,tr').forEach(el => {
+    if (el.querySelector('p,h1,h2,h3,h4,h5,h6,pre,blockquote,table')) return; // the inner blocks are taken instead
+    let t;
+    if (el.tagName === 'TR') t = [...el.children].map(c => c.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean).join(', ');
+    else { const c = el.cloneNode(true); c.querySelectorAll('ul,ol').forEach(x => x.remove()); t = el.tagName === 'PRE' ? c.textContent.trim() : c.textContent.replace(/\s+/g, ' ').trim(); }
+    if (!t) return;
+    if (/^H[1-6]$/.test(el.tagName) && !/[.!?:]$/.test(t)) t += '.'; // a pause after headings
+    out.push(t);
+  });
+  return out.join('\n\n') + '\n';
+}
+$('#btnSpeechify').addEventListener('click', async () => {
+  const d = cur();
+  const text = plainTextFor(d);
+  if (!text.trim()) { toast('This document is empty.'); return; }
+  const name = safeName(d.title) + '.txt';
+  const file = new File([text], name, { type: 'text/plain' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: d.title });
+    } else if (navigator.share) {
+      await navigator.share({ title: d.title, text });
+    } else {
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      toast('Sharing isn’t available here, so the text was saved as ' + name + '. Open it in Speechify.');
+      return;
+    }
+    closePanels();
+  } catch (err) {
+    if (err.name !== 'AbortError') toast('Couldn’t open the share menu: ' + (err.message || err));
+  }
+});
+
 $('#btnPrint').addEventListener('click', () => {
   closePanels(); if (mode !== 'read') setMode('read'); closeFind();
   setTimeout(() => print(), 150);
@@ -922,6 +963,7 @@ function fillVoices() {
   const def = document.createElement('option'); def.value = ''; def.textContent = 'Phone’s default voice'; sel.append(def);
   for (const v of sorted) { const o = document.createElement('option'); o.value = v.voiceURI; o.textContent = `${v.name} (${v.lang})`; sel.append(o); }
   sel.value = settings.voice && vs.some(v => v.voiceURI === settings.voice) ? settings.voice : '';
+  $('#voiceHint').hidden = vs.length > 0;
 }
 if (synth) { fillVoices(); synth.addEventListener?.('voiceschanged', fillVoices); }
 $('#ttsVoice').addEventListener('change', e => { settings.voice = e.target.value; store.set('mdr.settings', settings); if (tts.playing) ttsSpeak(); });
@@ -930,6 +972,7 @@ $('#ttsTest').addEventListener('click', () => {
   synth.cancel();
   const u = new SpeechSynthesisUtterance('This is how your documents will sound when read aloud.');
   u.rate = settings.rate; const v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; }
+  u.onstart = fillVoices; // some browsers only reveal their voices after the first use
   synth.speak(u);
 });
 addEventListener('pagehide', () => { if (synth) synth.cancel(); });

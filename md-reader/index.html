@@ -175,6 +175,7 @@
     <span class="lbl">Listen (read aloud)</span>
     <select id="ttsVoice" aria-label="Voice"></select>
     <button class="link" id="ttsTest">Test voice</button>
+    <p class="hint" id="voiceHint" hidden>This browser isn’t sharing its voice list with web pages, so the phone’s default voice is used. For natural voices, try your browser’s own <b>Read aloud</b> (in Edge: ⋯ menu → Read aloud, in a normal tab), or <b>Send to Speechify</b> from the Export panel.</p>
   </div>
   <div class="row">
     <label class="check"><input type="checkbox" id="wakeLock"> Keep screen on while reading</label>
@@ -185,6 +186,11 @@
 <div class="sheet" id="exportSheet" role="dialog" aria-label="Export" hidden>
   <div class="grab"></div>
   <div class="sheet-head"><h3>Export “<span id="exportName"></span>”</h3><button class="done" data-close>Close</button></div>
+  <button class="btn wide speechify" id="btnSpeechify">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg>
+    Send to Speechify
+  </button>
+  <p class="hint sp-hint">Opens your share menu with a clean text copy of this document. Choose <b>Speechify</b>.</p>
   <div class="exgrid">
     <button class="ex" data-ex="docx"><b>Word</b><small>.docx</small></button>
     <button class="ex" data-ex="pdf"><b>PDF</b><small>.pdf</small></button>

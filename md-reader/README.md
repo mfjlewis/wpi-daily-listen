@@ -13,6 +13,7 @@ Everything runs in the browser and documents are stored only on the device.
   Highlights are saved in the Markdown (`==text==` or `<mark class="hl-green">…</mark>`), so they carry into exports
 - Edit mode with a formatting toolbar; autosaves
 - Multiple documents, each reopening where you left off
+- **Send to Speechify** (Export panel): shares a clean plain-text copy through the phone's share menu, with Markdown symbols removed
 - Export to **Word (.docx)**, **PDF**, **HTML** and **Markdown**, by download or the phone's share sheet
 - Works offline once loaded; on Android you can share a `.md` file straight to the installed app
 
