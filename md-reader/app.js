@@ -312,7 +312,7 @@ addEventListener('dragover', e => e.preventDefault());
 addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) importFile(f); });
 
 /* ---------------- settings & export sheets ---------------- */
-$('#btnSettings').addEventListener('click', () => openPanel($('#settingsSheet')));
+$('#btnSettings').addEventListener('click', () => { if (typeof fillVoices === 'function') fillVoices(); openPanel($('#settingsSheet')); });
 $('#btnExport').addEventListener('click', () => {
   $('#exportName').textContent = cur().title;
   const canShare = !!(navigator.canShare && navigator.canShare({ files: [new File(['x'], 'x.md', { type: 'text/markdown' })] }));
@@ -963,6 +963,7 @@ function fillVoices() {
   const def = document.createElement('option'); def.value = ''; def.textContent = 'Phone’s default voice'; sel.append(def);
   for (const v of sorted) { const o = document.createElement('option'); o.value = v.voiceURI; o.textContent = `${v.name} (${v.lang})`; sel.append(o); }
   sel.value = settings.voice && vs.some(v => v.voiceURI === settings.voice) ? settings.voice : '';
+  $('#voiceHint').hidden = vs.length > 0;
 }
 if (synth) { fillVoices(); synth.addEventListener?.('voiceschanged', fillVoices); }
 $('#ttsVoice').addEventListener('change', e => { settings.voice = e.target.value; store.set('mdr.settings', settings); if (tts.playing) ttsSpeak(); });
@@ -971,6 +972,7 @@ $('#ttsTest').addEventListener('click', () => {
   synth.cancel();
   const u = new SpeechSynthesisUtterance('This is how your documents will sound when read aloud.');
   u.rate = settings.rate; const v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; }
+  u.onstart = fillVoices; // some browsers only reveal their voices after the first use
   synth.speak(u);
 });
 addEventListener('pagehide', () => { if (synth) synth.cancel(); });

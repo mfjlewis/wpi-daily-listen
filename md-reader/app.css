@@ -283,3 +283,4 @@ input[type="color"] { width: 48px; height: 36px; border: 1px solid var(--line); 
   .doc pre, .doc blockquote, .doc table, .doc img { break-inside: avoid; }
   .doc h1, .doc h2, .doc h3 { break-after: avoid; }
 }
+.row .hint { width: 100%; margin: 2px 0 0; }
